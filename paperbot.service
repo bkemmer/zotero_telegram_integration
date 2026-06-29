@@ -1,0 +1,15 @@
+[Unit]
+Description=Paper-link Telegram bot (Zotero + Google Drive)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/paperbot/env
+WorkingDirectory=/opt/paperbot
+ExecStart=/opt/paperbot/venv/bin/python /opt/paperbot/bot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

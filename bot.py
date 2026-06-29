@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Telegram -> Zotero + Google Drive paper pipeline.
+
+Send the bot a link. If it's a paper: index it in Zotero (Web API) and drop the
+PDF into a Google Drive folder (via rclone) that your iPad reader syncs.
+
+Run: python bot.py            (long-poll loop, needs env vars below)
+     python bot.py --selftest (offline asserts, no network)
+
+Env (see README): TELEGRAM_TOKEN ALLOWED_CHAT_ID ZOTERO_API_KEY ZOTERO_USER_ID
+                  UNPAYWALL_EMAIL [RCLONE_REMOTE=gdrive] [DRIVE_DIR=Papers]
+"""
+import os
+import re
+import sys
+import json
+import subprocess
+import tempfile
+
+import requests
+
+TRANSLATION_SERVER = os.environ.get("TRANSLATION_SERVER", "http://localhost:1969")
+RCLONE_REMOTE = os.environ.get("RCLONE_REMOTE", "gdrive")
+DRIVE_DIR = os.environ.get("DRIVE_DIR", "Papers")
+
+PAPER_TYPES = {
+    "journalArticle", "conferencePaper", "preprint",
+    "book", "bookSection", "thesis", "report",
+}
+URL_RE = re.compile(r"https?://[^\s]+")
+
+
+# --- pure helpers (covered by --selftest) -----------------------------------
+
+def is_paper(items):
+    """True if the first translated item looks like a paper."""
+    return bool(items) and items[0].get("itemType") in PAPER_TYPES
+
+
+def first_url(text):
+    m = URL_RE.search(text or "")
+    return m.group(0).rstrip(").,]") if m else None
+
+
+def slugify(item):
+    """FirstAuthor_Year_TitleWords -> safe pdf basename (no extension)."""
+    creators = item.get("creators") or []
+    author = "Unknown"
+    for c in creators:
+        author = c.get("lastName") or c.get("name") or author
+        if author != "Unknown":
+            break
+    ym = re.search(r"\d{4}", item.get("date", "") or "")
+    year = ym.group(0) if ym else "n.d."
+    title = item.get("title", "") or "untitled"
+    words = re.findall(r"[A-Za-z0-9]+", title)[:6]
+    parts = [re.sub(r"[^A-Za-z0-9]", "", author), year] + words
+    name = "_".join(p for p in parts if p)
+    return name[:120] or "paper"
+
+
+def pdf_url_from_item(item):
+    """PDF url translation-server attached to the item, if any."""
+    for att in item.get("attachments", []) or []:
+        if att.get("mimeType") == "application/pdf" and att.get("url"):
+            return att["url"]
+    return None
+
+
+def doi_of(item):
+    doi = item.get("DOI")
+    if doi:
+        return doi
+    # some translators stash it in extra
+    m = re.search(r"10\.\d{4,9}/\S+", item.get("extra", "") or "")
+    return m.group(0) if m else None
+
+
+# --- network steps -----------------------------------------------------------
+
+def translate(url):
+    r = requests.post(f"{TRANSLATION_SERVER}/web", data=url.encode(),
+                      headers={"Content-Type": "text/plain"}, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
+def zotero_add(item, api_key, user_id):
+    """POST one item (minus nested children) to the Zotero Web API. Returns key."""
+    payload = {k: v for k, v in item.items() if k not in ("attachments", "notes")}
+    r = requests.post(
+        f"https://api.zotero.org/users/{user_id}/items",
+        headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
+        data=json.dumps([payload]), timeout=60,
+    )
+    r.raise_for_status()
+    res = r.json()
+    if res.get("failed"):
+        raise RuntimeError(f"Zotero rejected item: {res['failed']}")
+    return res["successful"]["0"]["key"]
+
+
+def unpaywall_pdf(doi, email):
+    if not doi:
+        return None
+    r = requests.get(f"https://api.unpaywall.org/v2/{doi}",
+                     params={"email": email}, timeout=30)
+    if r.status_code != 200:
+        return None
+    loc = (r.json() or {}).get("best_oa_location") or {}
+    return loc.get("url_for_pdf")
+
+
+def download(url):
+    # ponytail: streams to disk (stream=True + iter_content), so the PDF is
+    # never held whole in RAM — keeps memory flat on a 1GB VPS.
+    r = requests.get(url, timeout=120, stream=True,
+                     headers={"User-Agent": "paperbot/1.0"})
+    r.raise_for_status()
+    fd, path = tempfile.mkstemp(suffix=".pdf")
+    with os.fdopen(fd, "wb") as f:
+        for chunk in r.iter_content(8192):
+            f.write(chunk)
+    return path
+
+
+def to_drive(local_path, name):
+    dest = f"{RCLONE_REMOTE}:{DRIVE_DIR}/{name}.pdf"
+    subprocess.run(["rclone", "copyto", local_path, dest], check=True)
+    return dest
+
+
+# --- pipeline ----------------------------------------------------------------
+
+def handle(text, env):
+    url = first_url(text)
+    if not url:
+        return "No link found."
+    try:
+        items = translate(url)
+    except Exception as e:
+        return f"Couldn't read that link: {e}"
+    if not is_paper(items):
+        return "Not a paper, ignored."
+
+    item = items[0]
+    title = item.get("title", "(untitled)")
+    lines = [title]
+
+    try:
+        key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+        lines.append(f"✓ Zotero ({key})")
+    except Exception as e:
+        lines.append(f"✗ Zotero failed: {e}")
+
+    pdf = pdf_url_from_item(item) or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"])
+    if not pdf:
+        lines.append("no open PDF")
+        return "\n".join(lines)
+    try:
+        path = download(pdf)
+        try:
+            to_drive(path, slugify(item))
+            lines.append("✓ Drive")
+        finally:
+            os.remove(path)
+    except Exception as e:
+        lines.append(f"✗ PDF/Drive failed: {e}")
+    return "\n".join(lines)
+
+
+# --- telegram long-poll ------------------------------------------------------
+
+def telegram_loop(env):
+    token = env["TELEGRAM_TOKEN"]
+    allowed = str(env["ALLOWED_CHAT_ID"])
+    api = f"https://api.telegram.org/bot{token}"
+    offset = None
+    print("paperbot: polling", flush=True)
+    while True:
+        try:
+            r = requests.get(f"{api}/getUpdates",
+                             params={"offset": offset, "timeout": 30}, timeout=40)
+            updates = r.json().get("result", [])
+        except Exception as e:
+            print("poll error:", e, flush=True)
+            continue
+        for upd in updates:
+            offset = upd["update_id"] + 1
+            msg = upd.get("message") or upd.get("channel_post")
+            if not msg:
+                continue
+            chat_id = str(msg["chat"]["id"])
+            if chat_id != allowed:
+                continue  # ponytail: single-user allowlist
+            reply = handle(msg.get("text", ""), env)
+            requests.post(f"{api}/sendMessage",
+                          data={"chat_id": chat_id, "text": reply}, timeout=30)
+
+
+def selftest():
+    paper = {
+        "itemType": "journalArticle",
+        "title": "Attention Is All You Need",
+        "date": "2017-06-12",
+        "creators": [{"lastName": "Vaswani", "firstName": "Ashish"}],
+        "DOI": "10.5555/3295222.3295349",
+        "attachments": [{"mimeType": "application/pdf", "url": "http://x/p.pdf"}],
+    }
+    news = {"itemType": "webpage", "title": "Some News", "date": "2024"}
+    assert is_paper([paper]) is True
+    assert is_paper([news]) is False
+    assert is_paper([]) is False
+    assert slugify(paper) == "Vaswani_2017_Attention_Is_All_You_Need", slugify(paper)
+    assert slugify(news) == "Unknown_2024_Some_News", slugify(news)
+    assert first_url("see https://arxiv.org/abs/1706.03762).") == "https://arxiv.org/abs/1706.03762"
+    assert first_url("no link here") is None
+    assert pdf_url_from_item(paper) == "http://x/p.pdf"
+    assert pdf_url_from_item(news) is None
+    assert doi_of(paper) == "10.5555/3295222.3295349"
+    print("selftest ok")
+
+
+if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        selftest()
+    else:
+        required = ["TELEGRAM_TOKEN", "ALLOWED_CHAT_ID", "ZOTERO_API_KEY",
+                    "ZOTERO_USER_ID", "UNPAYWALL_EMAIL"]
+        env = {k: os.environ.get(k) for k in required}
+        missing = [k for k, v in env.items() if not v]
+        if missing:
+            sys.exit("Missing env vars: " + ", ".join(missing))
+        telegram_loop(env)
