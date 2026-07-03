@@ -19,6 +19,9 @@ You ──link──▶ Telegram bot ──▶ bot.py (VPS)
 ```sh
 docker run -d -p 1969:1969 --restart unless-stopped zotero/translation-server
 ```
+> **On 32-bit ARM (armv7l / armhf, e.g. ODROID XU4):** the Docker image is
+> amd64-only. Run translation-server natively on Node instead — see
+> [translation-server-armhf.md](translation-server-armhf.md).
 
 ### 2. rclone + Google Drive remote
 ```sh
