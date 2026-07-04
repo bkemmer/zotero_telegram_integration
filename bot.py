@@ -98,14 +98,10 @@ def build_payload(item, collection_key=None):
 
 
 def pick_collection(item, collections, default_name=None):
-    # ponytail: fixed default for now. A real classifier replaces this body;
+    # ponytail: fixed default for now. A real classifier replaces this body
+    # (it returns a collection NAME; the ensure step creates it if missing);
     # the signature already carries the paper + the collection list it needs.
-    if not default_name:
-        return None
-    for c in collections:
-        if c["name"] == default_name:
-            return c["key"]
-    return None
+    return default_name or "PAPERBOT"
 
 
 # --- network steps -----------------------------------------------------------
@@ -127,6 +123,23 @@ def zotero_collections(api_key, user_id):
     return [{"key": c["key"], "name": c["data"]["name"],
              "parent": c["data"].get("parentCollection") or None}
             for c in r.json()]
+
+
+def zotero_ensure_collection(name, collections, api_key, user_id):
+    """Return the key of top-level collection `name`, creating it if absent."""
+    for c in collections:
+        if c["name"] == name:
+            return c["key"]
+    r = requests.post(
+        f"https://api.zotero.org/users/{user_id}/collections",
+        headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
+        data=json.dumps([{"name": name}]), timeout=30,
+    )
+    r.raise_for_status()
+    res = r.json()
+    if res.get("failed"):
+        raise RuntimeError(f"Zotero rejected collection: {res['failed']}")
+    return res["successful"]["0"]["key"]
 
 
 def zotero_add(item, api_key, user_id, collection_key=None):
@@ -196,13 +209,22 @@ def handle(text, env):
     print(f"paper found: {title}", flush=True)
     lines = [title]
 
+    collections = None
     try:
         collections = zotero_collections(env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
     except Exception as e:
         print(f"collection fetch failed: {e}", flush=True)
-        collections = []
-    coll_key = pick_collection(item, collections, env.get("ZOTERO_COLLECTION"))
-    print(f"collection: {coll_key or 'library root'}", flush=True)
+    coll_key = None
+    if collections is not None:  # skip on fetch failure so we don't create a dup
+        name = pick_collection(item, collections, env.get("ZOTERO_COLLECTION"))
+        try:
+            coll_key = zotero_ensure_collection(
+                name, collections, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+            print(f"collection: {name} ({coll_key})", flush=True)
+        except Exception as e:
+            print(f"collection ensure failed: {e}", flush=True)
+    else:
+        print("collection: skipped (fetch failed), library root", flush=True)
 
     try:
         key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"], coll_key)
@@ -294,10 +316,11 @@ def selftest():
     assert build_payload(paper, "ABCD")["collections"] == ["ABCD"]
     tagged = dict(paper, tags=[{"tag": "nlp"}, {"tag": "paperbot"}])
     assert build_payload(tagged)["tags"] == [{"tag": "nlp"}, {"tag": "paperbot"}]
-    cols = [{"key": "K1", "name": "ML Papers", "parent": None}]
-    assert pick_collection(paper, cols, "ML Papers") == "K1"
-    assert pick_collection(paper, cols, "Nope") is None
-    assert pick_collection(paper, cols, None) is None
+    cols = [{"key": "K1", "name": "PAPERBOT", "parent": None}]
+    assert pick_collection(paper, cols, None) == "PAPERBOT"      # default
+    assert pick_collection(paper, cols, "ML Papers") == "ML Papers"  # env override
+    # ensure resolves an existing collection without hitting the network
+    assert zotero_ensure_collection("PAPERBOT", cols, "k", "u") == "K1"
     print("selftest ok")
 
 
