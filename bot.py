@@ -11,6 +11,7 @@ Env (see README): TELEGRAM_TOKEN ALLOWED_CHAT_ID ZOTERO_API_KEY ZOTERO_USER_ID
                   UNPAYWALL_EMAIL [ZOTERO_COLLECTION=<name>]
                   [RCLONE_REMOTE=gdrive] [DRIVE_DIR=Papers]
 """
+
 import os
 import re
 import sys
@@ -25,13 +26,19 @@ RCLONE_REMOTE = os.environ.get("RCLONE_REMOTE", "gdrive")
 DRIVE_DIR = os.environ.get("DRIVE_DIR", "Papers")
 
 PAPER_TYPES = {
-    "journalArticle", "conferencePaper", "preprint",
-    "book", "bookSection", "thesis", "report",
+    "journalArticle",
+    "conferencePaper",
+    "preprint",
+    "book",
+    "bookSection",
+    "thesis",
+    "report",
 }
 URL_RE = re.compile(r"https?://[^\s]+")
 
 
 # --- pure helpers (covered by --selftest) -----------------------------------
+
 
 def is_paper(items):
     """True if the first translated item looks like a paper."""
@@ -89,7 +96,9 @@ def _doi_matches(data, doi):
     if not doi:
         return False
     d = doi.lower()
-    return (data.get("DOI") or "").lower() == d or d in (data.get("extra") or "").lower()
+    return (data.get("DOI") or "").lower() == d or d in (
+        data.get("extra") or ""
+    ).lower()
 
 
 def _item_matches(data, doi, title):
@@ -124,9 +133,14 @@ def pick_collection(item, collections, default_name=None):
 
 # --- network steps -----------------------------------------------------------
 
+
 def translate(url):
-    r = requests.post(f"{TRANSLATION_SERVER}/web", data=url.encode(),
-                      headers={"Content-Type": "text/plain"}, timeout=60)
+    r = requests.post(
+        f"{TRANSLATION_SERVER}/web",
+        data=url.encode(),
+        headers={"Content-Type": "text/plain"},
+        timeout=60,
+    )
     r.raise_for_status()
     data = r.json()
     return data if isinstance(data, list) else []
@@ -134,13 +148,21 @@ def translate(url):
 
 def zotero_collections(api_key, user_id):
     # ponytail: single page (limit=100); paginate only if a library exceeds it.
-    r = requests.get(f"https://api.zotero.org/users/{user_id}/collections",
-                     headers={"Zotero-API-Key": api_key},
-                     params={"limit": 100}, timeout=30)
+    r = requests.get(
+        f"https://api.zotero.org/users/{user_id}/collections",
+        headers={"Zotero-API-Key": api_key},
+        params={"limit": 100},
+        timeout=30,
+    )
     r.raise_for_status()
-    return [{"key": c["key"], "name": c["data"]["name"],
-             "parent": c["data"].get("parentCollection") or None}
-            for c in r.json()]
+    return [
+        {
+            "key": c["key"],
+            "name": c["data"]["name"],
+            "parent": c["data"].get("parentCollection") or None,
+        }
+        for c in r.json()
+    ]
 
 
 def zotero_collection_items(collection_key, api_key, user_id):
@@ -152,7 +174,9 @@ def zotero_collection_items(collection_key, api_key, user_id):
         r = requests.get(
             f"https://api.zotero.org/users/{user_id}/collections/{collection_key}/items/top",
             headers={"Zotero-API-Key": api_key},
-            params={"limit": 100, "start": start}, timeout=30)
+            params={"limit": 100, "start": start},
+            timeout=30,
+        )
         r.raise_for_status()
         batch = r.json()
         items += batch
@@ -182,7 +206,8 @@ def zotero_ensure_collection(name, collections, api_key, user_id):
     r = requests.post(
         f"https://api.zotero.org/users/{user_id}/collections",
         headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
-        data=json.dumps([{"name": name}]), timeout=30,
+        data=json.dumps([{"name": name}]),
+        timeout=30,
     )
     r.raise_for_status()
     res = r.json()
@@ -197,7 +222,8 @@ def zotero_add(item, api_key, user_id, collection_key=None):
     r = requests.post(
         f"https://api.zotero.org/users/{user_id}/items",
         headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
-        data=json.dumps([payload]), timeout=60,
+        data=json.dumps([payload]),
+        timeout=60,
     )
     r.raise_for_status()
     res = r.json()
@@ -209,8 +235,9 @@ def zotero_add(item, api_key, user_id, collection_key=None):
 def unpaywall_pdf(doi, email):
     if not doi:
         return None
-    r = requests.get(f"https://api.unpaywall.org/v2/{doi}",
-                     params={"email": email}, timeout=30)
+    r = requests.get(
+        f"https://api.unpaywall.org/v2/{doi}", params={"email": email}, timeout=30
+    )
     if r.status_code != 200:
         return None
     loc = (r.json() or {}).get("best_oa_location") or {}
@@ -220,8 +247,9 @@ def unpaywall_pdf(doi, email):
 def download(url):
     # ponytail: streams to disk (stream=True + iter_content), so the PDF is
     # never held whole in RAM — keeps memory flat on a 1GB VPS.
-    r = requests.get(url, timeout=120, stream=True,
-                     headers={"User-Agent": "paperbot/1.0"})
+    r = requests.get(
+        url, timeout=120, stream=True, headers={"User-Agent": "paperbot/1.0"}
+    )
     r.raise_for_status()
     fd, path = tempfile.mkstemp(suffix=".pdf")
     with os.fdopen(fd, "wb") as f:
@@ -237,6 +265,7 @@ def to_drive(local_path, name):
 
 
 # --- pipeline ----------------------------------------------------------------
+
 
 def handle(text, env):
     url = first_url(text)
@@ -269,7 +298,8 @@ def handle(text, env):
         name = pick_collection(item, collections, env.get("ZOTERO_COLLECTION"))
         try:
             coll_key = zotero_ensure_collection(
-                name, collections, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+                name, collections, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"]
+            )
             print(f"collection: {name} ({coll_key})", flush=True)
         except Exception as e:
             print(f"collection ensure failed: {e}", flush=True)
@@ -279,7 +309,8 @@ def handle(text, env):
     if coll_key:  # dedup against the collection listing (no search-index lag)
         try:
             existing = zotero_find_existing(
-                item, coll_key, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+                item, coll_key, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"]
+            )
         except Exception as e:
             print(f"dup check failed: {e}", flush=True)
             existing = None  # fall through and add rather than risk losing the paper
@@ -296,8 +327,11 @@ def handle(text, env):
         print(f"zotero add failed: {e}", flush=True)
         lines.append(f"✗ Zotero failed: {e}")
 
-    pdf = (pdf_url_from_item(item) or arxiv_pdf(url)
-           or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"]))
+    pdf = (
+        pdf_url_from_item(item)
+        or arxiv_pdf(url)
+        or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"])
+    )
     if not pdf:
         print("no open pdf found", flush=True)
         lines.append("no open PDF")
@@ -319,6 +353,7 @@ def handle(text, env):
 
 # --- telegram long-poll ------------------------------------------------------
 
+
 def telegram_loop(env):
     token = env["TELEGRAM_TOKEN"]
     allowed = str(env["ALLOWED_CHAT_ID"])
@@ -327,8 +362,11 @@ def telegram_loop(env):
     print("paperbot: polling", flush=True)
     while True:
         try:
-            r = requests.get(f"{api}/getUpdates",
-                             params={"offset": offset, "timeout": 30}, timeout=40)
+            r = requests.get(
+                f"{api}/getUpdates",
+                params={"offset": offset, "timeout": 30},
+                timeout=40,
+            )
             updates = r.json().get("result", [])
         except Exception as e:
             print("poll error:", e, flush=True)
@@ -344,8 +382,11 @@ def telegram_loop(env):
                 continue  # ponytail: single-user allowlist
             print(f"message from {chat_id}: {msg.get('text', '')!r}", flush=True)
             reply = handle(msg.get("text", ""), env)
-            requests.post(f"{api}/sendMessage",
-                          data={"chat_id": chat_id, "text": reply}, timeout=30)
+            requests.post(
+                f"{api}/sendMessage",
+                data={"chat_id": chat_id, "text": reply},
+                timeout=30,
+            )
 
 
 def selftest():
@@ -363,12 +404,18 @@ def selftest():
     assert is_paper([]) is False
     assert slugify(paper) == "Vaswani_2017_Attention_Is_All_You_Need", slugify(paper)
     assert slugify(news) == "Unknown_2024_Some_News", slugify(news)
-    assert first_url("see https://arxiv.org/abs/1706.03762).") == "https://arxiv.org/abs/1706.03762"
+    assert (
+        first_url("see https://arxiv.org/abs/1706.03762).")
+        == "https://arxiv.org/abs/1706.03762"
+    )
     assert first_url("no link here") is None
     assert pdf_url_from_item(paper) == "http://x/p.pdf"
     assert pdf_url_from_item(news) is None
     assert doi_of(paper) == "10.5555/3295222.3295349"
-    assert arxiv_pdf("https://arxiv.org/abs/2605.30621") == "https://arxiv.org/pdf/2605.30621"
+    assert (
+        arxiv_pdf("https://arxiv.org/abs/2605.30621")
+        == "https://arxiv.org/pdf/2605.30621"
+    )
     assert arxiv_pdf("https://example.com/x") is None
 
     p = build_payload(paper)
@@ -379,20 +426,22 @@ def selftest():
     tagged = dict(paper, tags=[{"tag": "nlp"}, {"tag": "paperbot"}])
     assert build_payload(tagged)["tags"] == [{"tag": "nlp"}, {"tag": "paperbot"}]
     cols = [{"key": "K1", "name": "PAPERBOT", "parent": None}]
-    assert pick_collection(paper, cols, None) == "PAPERBOT"      # default
+    assert pick_collection(paper, cols, None) == "PAPERBOT"  # default
     assert pick_collection(paper, cols, "ML Papers") == "ML Papers"  # env override
     # ensure resolves an existing collection without hitting the network
     assert zotero_ensure_collection("PAPERBOT", cols, "k", "u") == "K1"
-    assert _doi_matches({"DOI": "10.5555/X"}, "10.5555/x")      # case-insensitive
+    assert _doi_matches({"DOI": "10.5555/X"}, "10.5555/x")  # case-insensitive
     assert _doi_matches({"extra": "DOI: 10.1/abc"}, "10.1/abc")  # stashed in extra
     assert not _doi_matches({"DOI": "10.9/z"}, "10.1/x")
     assert not _doi_matches({}, None)
     # arXiv-style dedup: no DOI, fall back to exact title
-    assert _item_matches({"title": "Attention Is All You Need"}, None, "attention is all you need")
+    assert _item_matches(
+        {"title": "Attention Is All You Need"}, None, "attention is all you need"
+    )
     assert _item_matches({"DOI": "10.5555/X"}, "10.5555/x", "different title")
     assert not _item_matches({"title": "Some Paper"}, None, "Other Paper")
     assert not _item_matches({}, None, "")
-    assert zotero_find_existing({}, "COLL", "k", "u") is None    # no id, no request
+    assert zotero_find_existing({}, "COLL", "k", "u") is None  # no id, no request
     print("selftest ok")
 
 
@@ -400,8 +449,13 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         selftest()
     else:
-        required = ["TELEGRAM_TOKEN", "ALLOWED_CHAT_ID", "ZOTERO_API_KEY",
-                    "ZOTERO_USER_ID", "UNPAYWALL_EMAIL"]
+        required = [
+            "TELEGRAM_TOKEN",
+            "ALLOWED_CHAT_ID",
+            "ZOTERO_API_KEY",
+            "ZOTERO_USER_ID",
+            "UNPAYWALL_EMAIL",
+        ]
         env = {k: os.environ.get(k) for k in required}
         env["ZOTERO_COLLECTION"] = os.environ.get("ZOTERO_COLLECTION")  # optional
         missing = [k for k, v in env.items() if not v and k in required]
