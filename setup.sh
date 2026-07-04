@@ -17,9 +17,11 @@ python3 -m venv "$APP/venv"
 "$APP/venv/bin/pip" install -q requests
 chown -R paperbot:paperbot "$APP"
 
-# move your rclone config in (run `rclone config` first, as yourself)
-if [ -f "$HOME/.config/rclone/rclone.conf" ]; then
-  install -o paperbot -g paperbot -m 600 "$HOME/.config/rclone/rclone.conf" "$APP/rclone.conf"
+# move your rclone config in (run `rclone config` first, as yourself, not root).
+# sudo resets $HOME to /root, so resolve the invoking user's home explicitly.
+RCLONE_SRC="$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)/.config/rclone/rclone.conf"
+if [ -f "$RCLONE_SRC" ]; then
+  install -o paperbot -g paperbot -m 600 "$RCLONE_SRC" "$APP/rclone.conf"
 else
   echo "WARN: no rclone.conf found — run 'rclone config' then copy it to $APP/rclone.conf"
 fi
