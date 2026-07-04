@@ -76,9 +76,11 @@ journalctl -u paperbot -f
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".
 
 ## Notes
-- Duplicates are skipped: if the same paper is already in your library — matched by DOI, or
-  by exact title when there's no DOI (e.g. arXiv preprints) — the bot replies "Already in
-  Zotero" and doesn't re-add it or re-upload the PDF.
+- Duplicates are skipped: before adding, the bot lists the target collection (`PAPERBOT` by
+  default) and, if the same paper is already there — matched by DOI, or by exact title when
+  there's no DOI (e.g. arXiv preprints) — replies "Already in …" and skips the add and PDF
+  upload. It checks the collection listing rather than Zotero's quick search, because the
+  search index lags behind writes and would miss a paper added moments earlier.
 - Every bot-added item gets a `paperbot` tag (easy to filter in Zotero) and is filed into
   a collection — `PAPERBOT` by default (created automatically on first use), or the name in
   `ZOTERO_COLLECTION` if set. Which collection best fits a paper is decided by

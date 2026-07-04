@@ -143,20 +143,32 @@ def zotero_collections(api_key, user_id):
             for c in r.json()]
 
 
-def zotero_find_existing(item, api_key, user_id):
-    """Key of an existing library item that is the same paper (by DOI, else by
-    exact title), or None. Best-effort: the `q` search is fuzzy, so results are
-    confirmed with an exact field match."""
+def zotero_collection_items(collection_key, api_key, user_id):
+    """All top-level items in a collection. Uses direct membership listing
+    (immediately consistent) rather than the quick-search index, which lags
+    behind writes and so misses papers the bot just added."""
+    items, start = [], 0
+    while True:
+        r = requests.get(
+            f"https://api.zotero.org/users/{user_id}/collections/{collection_key}/items/top",
+            headers={"Zotero-API-Key": api_key},
+            params={"limit": 100, "start": start}, timeout=30)
+        r.raise_for_status()
+        batch = r.json()
+        items += batch
+        if len(batch) < 100:
+            return items
+        start += 100
+
+
+def zotero_find_existing(item, collection_key, api_key, user_id):
+    """Key of an item already in `collection_key` that is the same paper (by
+    DOI, else by exact title), or None."""
     doi = doi_of(item)
     title = (item.get("title") or "").strip()
-    query = doi or title
-    if not query:
+    if not (doi or title):
         return None
-    r = requests.get(f"https://api.zotero.org/users/{user_id}/items",
-                     headers={"Zotero-API-Key": api_key},
-                     params={"q": query, "qmode": "everything"}, timeout=30)
-    r.raise_for_status()
-    for it in r.json():
+    for it in zotero_collection_items(collection_key, api_key, user_id):
         if _item_matches(it.get("data", {}), doi, title):
             return it["key"]
     return None
@@ -246,22 +258,13 @@ def handle(text, env):
     print(f"paper found: {title}", flush=True)
     lines = [title]
 
-    try:
-        existing = zotero_find_existing(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
-    except Exception as e:
-        print(f"dup check failed: {e}", flush=True)
-        existing = None  # fall through and add rather than risk losing the paper
-    if existing:
-        print(f"already in zotero: {existing}", flush=True)
-        lines.append(f"↺ Already in Zotero ({existing}) — skipped")
-        return "\n".join(lines)
-
     collections = None
     try:
         collections = zotero_collections(env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
     except Exception as e:
         print(f"collection fetch failed: {e}", flush=True)
     coll_key = None
+    name = None
     if collections is not None:  # skip on fetch failure so we don't create a dup
         name = pick_collection(item, collections, env.get("ZOTERO_COLLECTION"))
         try:
@@ -272,6 +275,18 @@ def handle(text, env):
             print(f"collection ensure failed: {e}", flush=True)
     else:
         print("collection: skipped (fetch failed), library root", flush=True)
+
+    if coll_key:  # dedup against the collection listing (no search-index lag)
+        try:
+            existing = zotero_find_existing(
+                item, coll_key, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+        except Exception as e:
+            print(f"dup check failed: {e}", flush=True)
+            existing = None  # fall through and add rather than risk losing the paper
+        if existing:
+            print(f"already in zotero: {existing}", flush=True)
+            lines.append(f"↺ Already in {name} ({existing}) — skipped")
+            return "\n".join(lines)
 
     try:
         key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"], coll_key)
@@ -377,7 +392,7 @@ def selftest():
     assert _item_matches({"DOI": "10.5555/X"}, "10.5555/x", "different title")
     assert not _item_matches({"title": "Some Paper"}, None, "Other Paper")
     assert not _item_matches({}, None, "")
-    assert zotero_find_existing({}, "k", "u") is None            # no id, no request
+    assert zotero_find_existing({}, "COLL", "k", "u") is None    # no id, no request
     print("selftest ok")
 
 
