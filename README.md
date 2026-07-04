@@ -4,14 +4,11 @@ Send a link to a Telegram bot. If it's a paper, it gets indexed in your Zotero
 library and its PDF is dropped into a Google Drive folder your iPad PDF reader
 syncs. Non-paper links get a "not a paper" reply.
 
-```
-You ──link──▶ Telegram bot ──▶ bot.py (VPS)
-                                 ├─ translation-server (Docker): URL → Zotero JSON + PDF link
-                                 ├─ paper? (itemType check)
-                                 ├─ Zotero Web API: add item → indexed
-                                 ├─ PDF: translation-server attachment → Unpaywall fallback
-                                 └─ rclone copyto → gdrive:Papers/ → iPad syncs it
-```
+![How paperbot works: a Telegram link flows through bot.py on the odroid —
+translation-server extracts the paper, the Zotero Web API adds it (tagged
+paperbot, filed into the PAPERBOT collection, duplicates skipped), and the PDF
+is pushed to Google Drive — ending in a searchable Zotero record and a PDF on
+the iPad.](docs/architecture.svg)
 
 ## VPS setup (in order)
 

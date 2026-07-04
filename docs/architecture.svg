@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 552" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="760" height="552" fill="#ffffff"/>
+  <text x="380" y="30" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">paperbot — how it works</text>
+
+  <!-- 1. user -->
+  <rect x="210" y="46" width="340" height="50" rx="10" fill="#e3f2fd" stroke="#2aabee" stroke-width="1.5"/>
+  <text x="380" y="76" text-anchor="middle" font-size="14" fill="#0f172a">📱  You — send a paper link to the Telegram bot</text>
+
+  <!-- arrow user -> bot -->
+  <line x1="380" y1="96" x2="380" y2="140" stroke="#94a3b8" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="392" y="122" font-size="11" fill="#64748b">Telegram · long-poll</text>
+
+  <!-- 2. bot.py container -->
+  <rect x="66" y="144" width="628" height="272" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="86" y="170" font-size="14" font-weight="700" fill="#0f172a">bot.py  ·  runs on the odroid (VPS)</text>
+  <line x1="86" y1="178" x2="674" y2="178" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- 2a translation-server -->
+  <rect x="100" y="190" width="560" height="50" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.4"/>
+  <text x="380" y="210" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">translation-server (Docker)</text>
+  <text x="380" y="228" text-anchor="middle" font-size="12.5" fill="#334155">link → paper metadata + PDF url   ·   not a paper → ignored</text>
+
+  <line x1="380" y1="240" x2="380" y2="256" stroke="#94a3b8" stroke-width="2" marker-end="url(#ah)"/>
+
+  <!-- 2b zotero -->
+  <rect x="100" y="256" width="560" height="72" rx="9" fill="#fde8e8" stroke="#cc2936" stroke-width="1.4"/>
+  <text x="380" y="276" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">Zotero Web API — add item</text>
+  <text x="380" y="294" text-anchor="middle" font-size="12.5" fill="#334155">tag: paperbot   ·   collection: PAPERBOT (created if missing)</text>
+  <text x="380" y="312" text-anchor="middle" font-size="12.5" fill="#334155">skips duplicates already in the collection (DOI / exact title)</text>
+
+  <line x1="380" y1="328" x2="380" y2="344" stroke="#94a3b8" stroke-width="2" marker-end="url(#ah)"/>
+
+  <!-- 2c pdf + rclone -->
+  <rect x="100" y="344" width="560" height="52" rx="9" fill="#e6f4ea" stroke="#34a853" stroke-width="1.4"/>
+  <text x="380" y="364" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">find PDF (attachment → arXiv → Unpaywall)</text>
+  <text x="380" y="382" text-anchor="middle" font-size="12.5" fill="#334155">rclone copyto → gdrive:Papers/</text>
+
+  <!-- branch to outputs -->
+  <path d="M380,416 L380,432 L221,432 L221,452" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#ah)"/>
+  <path d="M380,416 L380,432 L539,432 L539,452" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#ah)"/>
+
+  <!-- output: zotero library -->
+  <rect x="76" y="456" width="290" height="60" rx="10" fill="#fde8e8" stroke="#cc2936" stroke-width="1.5"/>
+  <text x="221" y="480" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">🔎  Zotero library</text>
+  <text x="221" y="500" text-anchor="middle" font-size="12" fill="#334155">searchable record, tagged + filed</text>
+
+  <!-- output: ipad -->
+  <rect x="394" y="456" width="290" height="60" rx="10" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.5"/>
+  <text x="539" y="480" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">📄  iPad reader</text>
+  <text x="539" y="500" text-anchor="middle" font-size="12" fill="#334155">PDF, via Google Drive sync</text>
+</svg>
