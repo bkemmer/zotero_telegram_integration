@@ -84,6 +84,14 @@ def doi_of(item):
     return m.group(0) if m else None
 
 
+def _doi_matches(data, doi):
+    """True if a Zotero item's data holds `doi` (DOI field or stashed in extra)."""
+    if not doi:
+        return False
+    d = doi.lower()
+    return (data.get("DOI") or "").lower() == d or d in (data.get("extra") or "").lower()
+
+
 def build_payload(item, collection_key=None):
     """Item payload for the Zotero API: drop nested children, always tag
     paperbot (idempotent), optionally file into a collection."""
@@ -123,6 +131,21 @@ def zotero_collections(api_key, user_id):
     return [{"key": c["key"], "name": c["data"]["name"],
              "parent": c["data"].get("parentCollection") or None}
             for c in r.json()]
+
+
+def zotero_find_by_doi(doi, api_key, user_id):
+    """Key of an existing library item with this DOI, or None. Best-effort:
+    the `q` search is fuzzy, so results are confirmed with an exact DOI match."""
+    if not doi:
+        return None
+    r = requests.get(f"https://api.zotero.org/users/{user_id}/items",
+                     headers={"Zotero-API-Key": api_key},
+                     params={"q": doi, "qmode": "everything"}, timeout=30)
+    r.raise_for_status()
+    for it in r.json():
+        if _doi_matches(it.get("data", {}), doi):
+            return it["key"]
+    return None
 
 
 def zotero_ensure_collection(name, collections, api_key, user_id):
@@ -208,6 +231,17 @@ def handle(text, env):
     title = item.get("title", "(untitled)")
     print(f"paper found: {title}", flush=True)
     lines = [title]
+
+    doi = doi_of(item)
+    try:
+        existing = zotero_find_by_doi(doi, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+    except Exception as e:
+        print(f"dup check failed: {e}", flush=True)
+        existing = None  # fall through and add rather than risk losing the paper
+    if existing:
+        print(f"already in zotero: {existing}", flush=True)
+        lines.append(f"↺ Already in Zotero ({existing}) — skipped")
+        return "\n".join(lines)
 
     collections = None
     try:
@@ -321,6 +355,11 @@ def selftest():
     assert pick_collection(paper, cols, "ML Papers") == "ML Papers"  # env override
     # ensure resolves an existing collection without hitting the network
     assert zotero_ensure_collection("PAPERBOT", cols, "k", "u") == "K1"
+    assert _doi_matches({"DOI": "10.5555/X"}, "10.5555/x")      # case-insensitive
+    assert _doi_matches({"extra": "DOI: 10.1/abc"}, "10.1/abc")  # stashed in extra
+    assert not _doi_matches({"DOI": "10.9/z"}, "10.1/x")
+    assert not _doi_matches({}, None)
+    assert zotero_find_by_doi(None, "k", "u") is None            # no DOI, no request
     print("selftest ok")
 
 
