@@ -27,16 +27,18 @@ rclone mkdir gdrive:Papers     # the folder your iPad reader syncs
 On a headless VPS, `rclone config` will tell you to run `rclone authorize "drive"`
 on a machine with a browser and paste the token back.
 
-### 3. The bot
+### 3. Install
+Run `rclone config` as yourself first (step 2), then from the repo dir:
 ```sh
-sudo mkdir -p /opt/paperbot && sudo cp bot.py /opt/paperbot/
-sudo python3 -m venv /opt/paperbot/venv
-sudo /opt/paperbot/venv/bin/pip install -r requirements.txt
+sudo ./setup.sh
 ```
+This creates the `paperbot` system user, the `/opt/paperbot` venv, copies `bot.py`
+and your `rclone.conf` in, installs the systemd unit, and stubs an empty
+`/etc/paperbot/env` (a re-run never overwrites an existing one).
 
 ### 4. Secrets
+Fill in the env file `setup.sh` created:
 ```sh
-sudo mkdir -p /etc/paperbot
 sudo tee /etc/paperbot/env >/dev/null <<'EOF'
 TELEGRAM_TOKEN=...        # from @BotFather
 ALLOWED_CHAT_ID=...       # your Telegram user id (from @userinfobot) — only you can use the bot
@@ -45,15 +47,14 @@ ZOTERO_USER_ID=...        # the numeric "Your userID" on that same page
 UNPAYWALL_EMAIL=you@example.com
 # optional: ZOTERO_COLLECTION=ML Papers  # collection to file papers into (default: PAPERBOT, auto-created)
 # optional: RCLONE_REMOTE=gdrive  DRIVE_DIR=Papers  TRANSLATION_SERVER=http://localhost:1969
-# the service runs as root, which has no rclone config of its own — point it at yours:
-RCLONE_CONFIG=/home/YOURUSER/.config/rclone/rclone.conf
 EOF
 sudo chmod 600 /etc/paperbot/env
 ```
+The service runs as `paperbot` and reads rclone from `/opt/paperbot/rclone.conf`
+(set in the unit), so no `RCLONE_CONFIG` line is needed here.
 
-### 5. Service
+### 5. Start
 ```sh
-sudo cp paperbot.service /etc/systemd/system/
 sudo systemctl enable --now paperbot
 journalctl -u paperbot -f      # watch it
 ```
