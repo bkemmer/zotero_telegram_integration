@@ -136,36 +136,47 @@ def to_drive(local_path, name):
 def handle(text, env):
     url = first_url(text)
     if not url:
+        print("no url in message, ignoring", flush=True)
         return "No link found."
+    print(f"translating {url}", flush=True)
     try:
         items = translate(url)
     except Exception as e:
+        print(f"translate failed: {e}", flush=True)
         return f"Couldn't read that link: {e}"
     if not is_paper(items):
+        print("not a paper, ignoring", flush=True)
         return "Not a paper, ignored."
 
     item = items[0]
     title = item.get("title", "(untitled)")
+    print(f"paper found: {title}", flush=True)
     lines = [title]
 
     try:
         key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+        print(f"zotero add ok: {key}", flush=True)
         lines.append(f"✓ Zotero ({key})")
     except Exception as e:
+        print(f"zotero add failed: {e}", flush=True)
         lines.append(f"✗ Zotero failed: {e}")
 
     pdf = pdf_url_from_item(item) or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"])
     if not pdf:
+        print("no open pdf found", flush=True)
         lines.append("no open PDF")
         return "\n".join(lines)
     try:
+        print(f"downloading pdf: {pdf}", flush=True)
         path = download(pdf)
         try:
             to_drive(path, slugify(item))
+            print("uploaded to drive", flush=True)
             lines.append("✓ Drive")
         finally:
             os.remove(path)
     except Exception as e:
+        print(f"pdf/drive failed: {e}", flush=True)
         lines.append(f"✗ PDF/Drive failed: {e}")
     return "\n".join(lines)
 
@@ -193,7 +204,9 @@ def telegram_loop(env):
                 continue
             chat_id = str(msg["chat"]["id"])
             if chat_id != allowed:
+                print(f"ignoring message from unauthorized chat {chat_id}", flush=True)
                 continue  # ponytail: single-user allowlist
+            print(f"message from {chat_id}: {msg.get('text', '')!r}", flush=True)
             reply = handle(msg.get("text", ""), env)
             requests.post(f"{api}/sendMessage",
                           data={"chat_id": chat_id, "text": reply}, timeout=30)
