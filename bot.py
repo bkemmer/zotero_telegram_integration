@@ -92,6 +92,16 @@ def _doi_matches(data, doi):
     return (data.get("DOI") or "").lower() == d or d in (data.get("extra") or "").lower()
 
 
+def _item_matches(data, doi, title):
+    """True if a Zotero item is the same paper: same DOI, or (no DOI) same title."""
+    if _doi_matches(data, doi):
+        return True
+    t = (title or "").strip().lower()
+    # ponytail: exact-title fallback for DOI-less papers (arXiv); a same-title
+    # collision is possible but vanishingly rare for real papers.
+    return bool(t) and (data.get("title") or "").strip().lower() == t
+
+
 def build_payload(item, collection_key=None):
     """Item payload for the Zotero API: drop nested children, always tag
     paperbot (idempotent), optionally file into a collection."""
@@ -133,17 +143,21 @@ def zotero_collections(api_key, user_id):
             for c in r.json()]
 
 
-def zotero_find_by_doi(doi, api_key, user_id):
-    """Key of an existing library item with this DOI, or None. Best-effort:
-    the `q` search is fuzzy, so results are confirmed with an exact DOI match."""
-    if not doi:
+def zotero_find_existing(item, api_key, user_id):
+    """Key of an existing library item that is the same paper (by DOI, else by
+    exact title), or None. Best-effort: the `q` search is fuzzy, so results are
+    confirmed with an exact field match."""
+    doi = doi_of(item)
+    title = (item.get("title") or "").strip()
+    query = doi or title
+    if not query:
         return None
     r = requests.get(f"https://api.zotero.org/users/{user_id}/items",
                      headers={"Zotero-API-Key": api_key},
-                     params={"q": doi, "qmode": "everything"}, timeout=30)
+                     params={"q": query, "qmode": "everything"}, timeout=30)
     r.raise_for_status()
     for it in r.json():
-        if _doi_matches(it.get("data", {}), doi):
+        if _item_matches(it.get("data", {}), doi, title):
             return it["key"]
     return None
 
@@ -232,9 +246,8 @@ def handle(text, env):
     print(f"paper found: {title}", flush=True)
     lines = [title]
 
-    doi = doi_of(item)
     try:
-        existing = zotero_find_by_doi(doi, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+        existing = zotero_find_existing(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
     except Exception as e:
         print(f"dup check failed: {e}", flush=True)
         existing = None  # fall through and add rather than risk losing the paper
@@ -359,7 +372,12 @@ def selftest():
     assert _doi_matches({"extra": "DOI: 10.1/abc"}, "10.1/abc")  # stashed in extra
     assert not _doi_matches({"DOI": "10.9/z"}, "10.1/x")
     assert not _doi_matches({}, None)
-    assert zotero_find_by_doi(None, "k", "u") is None            # no DOI, no request
+    # arXiv-style dedup: no DOI, fall back to exact title
+    assert _item_matches({"title": "Attention Is All You Need"}, None, "attention is all you need")
+    assert _item_matches({"DOI": "10.5555/X"}, "10.5555/x", "different title")
+    assert not _item_matches({"title": "Some Paper"}, None, "Other Paper")
+    assert not _item_matches({}, None, "")
+    assert zotero_find_existing({}, "k", "u") is None            # no id, no request
     print("selftest ok")
 
 
