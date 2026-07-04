@@ -25,5 +25,6 @@ Remaining steps are the manual ones — see README for the exact commands.
 - [ ] Send a news link → "Not a paper, ignored"
 
 ## Maybe later (skipped on purpose)
+- [ ] Auto-pick the collection by paper content (replace the `pick_collection` stub in `bot.py`)
 - [ ] Attach the PDF inside Zotero too (file-upload API) — only if you open papers from Zotero desktop
 - [ ] Confirm `gdrive:Papers/` is exactly the folder your iPad reader syncs

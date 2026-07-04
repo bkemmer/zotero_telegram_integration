@@ -8,7 +8,8 @@ Run: python bot.py            (long-poll loop, needs env vars below)
      python bot.py --selftest (offline asserts, no network)
 
 Env (see README): TELEGRAM_TOKEN ALLOWED_CHAT_ID ZOTERO_API_KEY ZOTERO_USER_ID
-                  UNPAYWALL_EMAIL [RCLONE_REMOTE=gdrive] [DRIVE_DIR=Papers]
+                  UNPAYWALL_EMAIL [ZOTERO_COLLECTION=<name>]
+                  [RCLONE_REMOTE=gdrive] [DRIVE_DIR=Papers]
 """
 import os
 import re
@@ -83,6 +84,30 @@ def doi_of(item):
     return m.group(0) if m else None
 
 
+def build_payload(item, collection_key=None):
+    """Item payload for the Zotero API: drop nested children, always tag
+    paperbot (idempotent), optionally file into a collection."""
+    payload = {k: v for k, v in item.items() if k not in ("attachments", "notes")}
+    tags = list(payload.get("tags") or [])
+    if not any(t.get("tag") == "paperbot" for t in tags):
+        tags.append({"tag": "paperbot"})
+    payload["tags"] = tags
+    if collection_key:
+        payload["collections"] = [collection_key]
+    return payload
+
+
+def pick_collection(item, collections, default_name=None):
+    # ponytail: fixed default for now. A real classifier replaces this body;
+    # the signature already carries the paper + the collection list it needs.
+    if not default_name:
+        return None
+    for c in collections:
+        if c["name"] == default_name:
+            return c["key"]
+    return None
+
+
 # --- network steps -----------------------------------------------------------
 
 def translate(url):
@@ -93,9 +118,20 @@ def translate(url):
     return data if isinstance(data, list) else []
 
 
-def zotero_add(item, api_key, user_id):
+def zotero_collections(api_key, user_id):
+    # ponytail: single page (limit=100); paginate only if a library exceeds it.
+    r = requests.get(f"https://api.zotero.org/users/{user_id}/collections",
+                     headers={"Zotero-API-Key": api_key},
+                     params={"limit": 100}, timeout=30)
+    r.raise_for_status()
+    return [{"key": c["key"], "name": c["data"]["name"],
+             "parent": c["data"].get("parentCollection") or None}
+            for c in r.json()]
+
+
+def zotero_add(item, api_key, user_id, collection_key=None):
     """POST one item (minus nested children) to the Zotero Web API. Returns key."""
-    payload = {k: v for k, v in item.items() if k not in ("attachments", "notes")}
+    payload = build_payload(item, collection_key)
     r = requests.post(
         f"https://api.zotero.org/users/{user_id}/items",
         headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
@@ -161,7 +197,15 @@ def handle(text, env):
     lines = [title]
 
     try:
-        key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+        collections = zotero_collections(env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+    except Exception as e:
+        print(f"collection fetch failed: {e}", flush=True)
+        collections = []
+    coll_key = pick_collection(item, collections, env.get("ZOTERO_COLLECTION"))
+    print(f"collection: {coll_key or 'library root'}", flush=True)
+
+    try:
+        key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"], coll_key)
         print(f"zotero add ok: {key}", flush=True)
         lines.append(f"✓ Zotero ({key})")
     except Exception as e:
@@ -242,6 +286,18 @@ def selftest():
     assert doi_of(paper) == "10.5555/3295222.3295349"
     assert arxiv_pdf("https://arxiv.org/abs/2605.30621") == "https://arxiv.org/pdf/2605.30621"
     assert arxiv_pdf("https://example.com/x") is None
+
+    p = build_payload(paper)
+    assert {"tag": "paperbot"} in p["tags"]
+    assert "attachments" not in p and "notes" not in p
+    assert "collections" not in p
+    assert build_payload(paper, "ABCD")["collections"] == ["ABCD"]
+    tagged = dict(paper, tags=[{"tag": "nlp"}, {"tag": "paperbot"}])
+    assert build_payload(tagged)["tags"] == [{"tag": "nlp"}, {"tag": "paperbot"}]
+    cols = [{"key": "K1", "name": "ML Papers", "parent": None}]
+    assert pick_collection(paper, cols, "ML Papers") == "K1"
+    assert pick_collection(paper, cols, "Nope") is None
+    assert pick_collection(paper, cols, None) is None
     print("selftest ok")
 
 
@@ -252,7 +308,8 @@ if __name__ == "__main__":
         required = ["TELEGRAM_TOKEN", "ALLOWED_CHAT_ID", "ZOTERO_API_KEY",
                     "ZOTERO_USER_ID", "UNPAYWALL_EMAIL"]
         env = {k: os.environ.get(k) for k in required}
-        missing = [k for k, v in env.items() if not v]
+        env["ZOTERO_COLLECTION"] = os.environ.get("ZOTERO_COLLECTION")  # optional
+        missing = [k for k, v in env.items() if not v and k in required]
         if missing:
             sys.exit("Missing env vars: " + ", ".join(missing))
         telegram_loop(env)

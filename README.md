@@ -48,6 +48,7 @@ ALLOWED_CHAT_ID=...       # your Telegram user id (from @userinfobot) — only y
 ZOTERO_API_KEY=...        # zotero.org/settings/keys (needs write access)
 ZOTERO_USER_ID=...        # the numeric "Your userID" on that same page
 UNPAYWALL_EMAIL=you@example.com
+# optional: ZOTERO_COLLECTION=ML Papers  # collection (folder) name to file papers into; blank = library root
 # optional: RCLONE_REMOTE=gdrive  DRIVE_DIR=Papers  TRANSLATION_SERVER=http://localhost:1969
 # the service runs as root, which has no rclone config of its own — point it at yours:
 RCLONE_CONFIG=/home/YOURUSER/.config/rclone/rclone.conf
@@ -75,6 +76,10 @@ journalctl -u paperbot -f
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".
 
 ## Notes
+- Every bot-added item gets a `paperbot` tag (easy to filter in Zotero) and is filed
+  into the `ZOTERO_COLLECTION` folder if set. Which collection best fits a paper is picked
+  by `pick_collection()` in `bot.py` — a fixed-default stub for now, ready to swap for a
+  real classifier.
 - Zotero holds the searchable *record*; the readable PDF lives in Drive for the
   iPad. To also attach the PDF inside Zotero, add the file-upload API calls later.
 - Uses Telegram long-polling (no domain/TLS needed) and raw `requests` instead of
