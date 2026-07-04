@@ -49,6 +49,8 @@ ZOTERO_API_KEY=...        # zotero.org/settings/keys (needs write access)
 ZOTERO_USER_ID=...        # the numeric "Your userID" on that same page
 UNPAYWALL_EMAIL=you@example.com
 # optional: RCLONE_REMOTE=gdrive  DRIVE_DIR=Papers  TRANSLATION_SERVER=http://localhost:1969
+# the service runs as root, which has no rclone config of its own — point it at yours:
+RCLONE_CONFIG=/home/YOURUSER/.config/rclone/rclone.conf
 EOF
 sudo chmod 600 /etc/paperbot/env
 ```
