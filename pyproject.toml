@@ -1,12 +1,17 @@
 [project]
 name = "zotero-telegram-integration"
 version = "0.1.0"
-description = "Add your description here"
+description = "Telegram bot that indexes paper links in Zotero and syncs their PDFs to Google Drive"
 readme = "README.md"
 requires-python = ">=3.11.10"
+license = "MIT"
+authors = [{ name = "Bruno Kemmer", email = "brunokemmer@gmail.com" }]
 dependencies = [
     "requests>=2.34.2",
 ]
+
+[project.urls]
+Repository = "https://github.com/bkemmer/zotero_telegram_integration"
 
 [dependency-groups]
 dev = [
