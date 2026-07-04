@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+alias paperbot_journal="journalctl -u paperbot -f"
+alias paperbot_restart="sudo systemctl restart paperbot"
