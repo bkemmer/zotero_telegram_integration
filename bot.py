@@ -67,6 +67,13 @@ def pdf_url_from_item(item):
     return None
 
 
+def arxiv_pdf(url):
+    # ponytail: arxiv's translator only snapshots the abstract page (no pdf
+    # attachment, no DOI), but /abs/<id> -> /pdf/<id> is a stable url pattern.
+    m = re.match(r"https?://arxiv\.org/abs/(\S+)", url or "")
+    return f"https://arxiv.org/pdf/{m.group(1)}" if m else None
+
+
 def doi_of(item):
     doi = item.get("DOI")
     if doi:
@@ -161,7 +168,8 @@ def handle(text, env):
         print(f"zotero add failed: {e}", flush=True)
         lines.append(f"✗ Zotero failed: {e}")
 
-    pdf = pdf_url_from_item(item) or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"])
+    pdf = (pdf_url_from_item(item) or arxiv_pdf(url)
+           or unpaywall_pdf(doi_of(item), env["UNPAYWALL_EMAIL"]))
     if not pdf:
         print("no open pdf found", flush=True)
         lines.append("no open PDF")
@@ -232,6 +240,8 @@ def selftest():
     assert pdf_url_from_item(paper) == "http://x/p.pdf"
     assert pdf_url_from_item(news) is None
     assert doi_of(paper) == "10.5555/3295222.3295349"
+    assert arxiv_pdf("https://arxiv.org/abs/2605.30621") == "https://arxiv.org/pdf/2605.30621"
+    assert arxiv_pdf("https://example.com/x") is None
     print("selftest ok")
 
 

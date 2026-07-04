@@ -59,6 +59,12 @@ sudo cp paperbot.service /etc/systemd/system/
 sudo systemctl enable --now paperbot
 journalctl -u paperbot -f      # watch it
 ```
+To watch logs as your own user without `sudo`:
+```sh
+sudo usermod -aG systemd-journal $USER
+# log out/in (or `newgrp systemd-journal`) for it to take effect
+journalctl -u paperbot -f
+```
 
 ## Verify
 - Offline logic: `python bot.py --selftest`  → prints `selftest ok`.
