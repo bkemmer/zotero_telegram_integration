@@ -16,7 +16,7 @@ docker run -d -p 1969:1969 --restart unless-stopped zotero/translation-server
 ```
 > **On 32-bit ARM (armv7l / armhf):** the Docker image is
 > amd64-only. Run translation-server natively on Node instead — see
-> [translation-server-armhf.md](translation-server-armhf.md).
+> [translation-server-armhf.md](docs/translation-server-armhf.md).
 
 ### 2. rclone + Google Drive remote
 ```sh

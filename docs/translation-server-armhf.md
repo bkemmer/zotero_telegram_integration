@@ -99,4 +99,4 @@ sudo systemctl restart translation-server
 ## Where paperbot expects it
 
 `bot.py` defaults to `TRANSLATION_SERVER=http://localhost:1969`, so no bot config
-change is needed when it runs on the same host. See the main [README](README.md).
+change is needed when it runs on the same host. See the main [README](../README.md).
