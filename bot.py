@@ -16,10 +16,15 @@ import os
 import re
 import sys
 import json
+import socket
+import ipaddress
 import subprocess
 import tempfile
+from urllib.parse import urljoin, urlparse
 
 import requests
+
+MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB — a single PDF can't fill a 1GB VPS
 
 TRANSLATION_SERVER = os.environ.get("TRANSLATION_SERVER", "http://localhost:1969")
 RCLONE_REMOTE = os.environ.get("RCLONE_REMOTE", "gdrive")
@@ -244,18 +249,54 @@ def unpaywall_pdf(doi, email):
     return loc.get("url_for_pdf")
 
 
+def _check_public_url(url):
+    """Reject non-http(s) URLs and hosts resolving to private/loopback/link-local
+    addresses. Blocks SSRF (cloud metadata 169.254.169.254, localhost, LAN) via a
+    hostile link the owner pastes.
+    ponytail: re-checks every redirect hop but not the final connect, so a
+    DNS-rebind between check and fetch could still slip through; drop to a pinned
+    resolver + IP-bound connect if that threat matters."""
+    p = urlparse(url)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise ValueError(f"refusing non-http(s) url: {url}")
+    for info in socket.getaddrinfo(p.hostname, p.port or 0, proto=socket.IPPROTO_TCP):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError(f"refusing url to non-public address {ip}: {url}")
+
+
 def download(url):
     # ponytail: streams to disk (stream=True + iter_content), so the PDF is
-    # never held whole in RAM — keeps memory flat on a 1GB VPS.
-    r = requests.get(
-        url, timeout=120, stream=True, headers={"User-Agent": "paperbot/1.0"}
-    )
-    r.raise_for_status()
-    fd, path = tempfile.mkstemp(suffix=".pdf")
-    with os.fdopen(fd, "wb") as f:
-        for chunk in r.iter_content(8192):
-            f.write(chunk)
-    return path
+    # never held whole in RAM — keeps memory flat on a 1GB VPS. Redirects are
+    # followed manually so each hop's host gets SSRF-checked, not just the first.
+    for _ in range(6):
+        _check_public_url(url)
+        r = requests.get(
+            url,
+            timeout=120,
+            stream=True,
+            allow_redirects=False,
+            headers={"User-Agent": "paperbot/1.0"},
+        )
+        if r.is_redirect or r.is_permanent_redirect:
+            url = urljoin(url, r.headers["Location"])
+            r.close()
+            continue
+        r.raise_for_status()
+        fd, path = tempfile.mkstemp(suffix=".pdf")
+        size = 0
+        try:
+            with os.fdopen(fd, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    size += len(chunk)
+                    if size > MAX_PDF_BYTES:
+                        raise ValueError(f"pdf exceeds {MAX_PDF_BYTES} bytes")
+                    f.write(chunk)
+        except BaseException:
+            os.remove(path)
+            raise
+        return path
+    raise ValueError(f"too many redirects: {url}")
 
 
 def to_drive(local_path, name):
@@ -369,7 +410,9 @@ def telegram_loop(env):
             )
             updates = r.json().get("result", [])
         except Exception as e:
-            print("poll error:", e, flush=True)
+            # requests/urllib3 errors embed the request URL, which carries the
+            # bot token — scrub it before it reaches the journal.
+            print("poll error:", str(e).replace(token, "<redacted>"), flush=True)
             continue
         for upd in updates:
             offset = upd["update_id"] + 1

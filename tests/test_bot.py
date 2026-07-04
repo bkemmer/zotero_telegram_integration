@@ -88,6 +88,22 @@ def test_find_existing_no_id_no_request():
     assert bot.zotero_find_existing({}, "COLL", "k", "u") is None
 
 
+def test_check_public_url_blocks_ssrf():
+    import pytest
+
+    bot._check_public_url("https://arxiv.org/pdf/1234")  # public host: ok
+    for bad in [
+        "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+        "http://localhost:1969/",  # loopback
+        "http://127.0.0.1/",
+        "http://192.168.1.1/",  # private LAN
+        "file:///etc/passwd",  # non-http scheme
+        "ftp://example.com/x",
+    ]:
+        with pytest.raises(ValueError):
+            bot._check_public_url(bad)
+
+
 def test_ensure_collection_creates_via_api(mocker):
     """pytest-mock: creation path POSTs and returns the new key."""
     post = mocker.patch("bot.requests.post")

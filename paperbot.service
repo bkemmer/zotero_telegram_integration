@@ -5,11 +5,28 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# Create first:  useradd --system --home-dir /opt/paperbot --shell /usr/sbin/nologin paperbot
+# then move your rclone config to /opt/paperbot/rclone.conf and chown paperbot:paperbot /opt/paperbot -R
+User=paperbot
+Group=paperbot
+Environment=RCLONE_CONFIG=/opt/paperbot/rclone.conf
 EnvironmentFile=/etc/paperbot/env
 WorkingDirectory=/opt/paperbot
 ExecStart=/opt/paperbot/venv/bin/python /opt/paperbot/bot.py
 Restart=on-failure
 RestartSec=5
+
+# hardening: unprivileged, read-only fs except its own dir, private /tmp
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/paperbot
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
 
 [Install]
 WantedBy=multi-user.target
