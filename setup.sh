@@ -26,11 +26,33 @@ else
   echo "WARN: no rclone.conf found — run 'rclone config' then copy it to $APP/rclone.conf"
 fi
 
-# secrets file (fill in the 5 values, see README)
+# secrets file (fill in the 5 values, see README).
+# systemd EnvironmentFile only strips full-line comments, so tips go ABOVE each
+# var — a trailing "# ..." would end up inside the value.
 install -d /etc/paperbot
 [ -f /etc/paperbot/env ] || {
-  install -m 600 /dev/null /etc/paperbot/env
-  echo "Created empty /etc/paperbot/env — fill in the secrets (see README)."
+  install -m 600 /dev/null /etc/paperbot/env   # 600 before any content is written
+  cat > /etc/paperbot/env <<'EOF'
+# paperbot secrets — fill in each value, then: systemctl restart paperbot
+
+# from @BotFather
+TELEGRAM_TOKEN=
+# your Telegram user id (from @userinfobot); only this chat may use the bot
+ALLOWED_CHAT_ID=
+# zotero.org/settings/keys (needs write access)
+ZOTERO_API_KEY=
+# the numeric "Your userID" on that same page
+ZOTERO_USER_ID=
+# your email, for the Unpaywall API
+UNPAYWALL_EMAIL=
+
+# optional — uncomment to override defaults:
+#ZOTERO_COLLECTION=ML Papers
+#RCLONE_REMOTE=gdrive
+#DRIVE_DIR=Papers
+#TRANSLATION_SERVER=http://localhost:1969
+EOF
+  echo "Created /etc/paperbot/env with placeholders — fill in the secrets (see README)."
 }
 
 # service
