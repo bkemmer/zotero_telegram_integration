@@ -9,7 +9,7 @@
 
   <!-- self-hosted boundary -->
   <rect x="250" y="24" width="250" height="266" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="6 5"/>
-  <text x="266" y="44" font-size="12" font-weight="600" fill="#64748b">self-hosted · odroid</text>
+  <text x="266" y="44" font-size="12" font-weight="600" fill="#64748b">self-hosted</text>
 
   <!-- edges (drawn first, under the nodes) -->
   <!-- telegram -> bot -->
@@ -34,36 +34,36 @@
   <!-- nodes -->
   <!-- telegram -->
   <rect x="40" y="204" width="140" height="56" rx="10" fill="#e3f2fd" stroke="#2aabee" stroke-width="1.5"/>
-  <text x="110" y="228" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Telegram</text>
+  <text x="110" y="228" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">✈️ Telegram</text>
   <text x="110" y="246" text-anchor="middle" font-size="11" fill="#64748b">you send a link</text>
 
   <!-- translation-server -->
   <rect x="283" y="52" width="190" height="54" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="378" y="76" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">translation-server</text>
+  <text x="378" y="76" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">🐳 translation-server</text>
   <text x="378" y="94" text-anchor="middle" font-size="11" fill="#64748b">Docker</text>
 
   <!-- bot.py (core) -->
   <rect x="300" y="190" width="156" height="80" rx="12" fill="#0f172a"/>
-  <text x="378" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">bot.py</text>
+  <text x="378" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">🤖 bot.py</text>
   <text x="378" y="243" text-anchor="middle" font-size="11.5" fill="#cbd5e1">orchestrator</text>
 
   <!-- zotero -->
   <rect x="560" y="120" width="185" height="54" rx="10" fill="#fde8e8" stroke="#cc2936" stroke-width="1.5"/>
-  <text x="652" y="144" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">Zotero Web API</text>
+  <text x="652" y="144" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">📚 Zotero Web API</text>
   <text x="652" y="162" text-anchor="middle" font-size="11" fill="#64748b">tag + collection</text>
 
   <!-- pdf sources -->
   <rect x="560" y="203" width="185" height="54" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
-  <text x="652" y="227" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">arXiv · Unpaywall</text>
+  <text x="652" y="227" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">📄 arXiv · Unpaywall</text>
   <text x="652" y="245" text-anchor="middle" font-size="11" fill="#64748b">PDF sources</text>
 
   <!-- google drive -->
   <rect x="560" y="286" width="185" height="54" rx="10" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="652" y="310" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">Google Drive</text>
+  <text x="652" y="310" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">☁️ Google Drive</text>
   <text x="652" y="328" text-anchor="middle" font-size="11" fill="#64748b">gdrive:Papers/</text>
 
   <!-- ipad -->
   <rect x="775" y="286" width="95" height="54" rx="10" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.5"/>
-  <text x="822" y="310" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">iPad</text>
+  <text x="822" y="310" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">📱 iPad</text>
   <text x="822" y="328" text-anchor="middle" font-size="11" fill="#64748b">reader</text>
 </svg>

@@ -4,7 +4,7 @@ Send a link to a Telegram bot. If it's a paper, it gets indexed in your Zotero
 library and its PDF is dropped into a Google Drive folder your iPad PDF reader
 syncs. Non-paper links get a "not a paper" reply.
 
-![paperbot architecture: bot.py on the odroid orchestrates a Telegram link
+![paperbot architecture: bot.py orchestrates a Telegram link
 through translation-server, the Zotero Web API, PDF sources (arXiv/Unpaywall)
 and Google Drive, which syncs to the iPad.](docs/architecture.svg)
 
@@ -14,7 +14,7 @@ and Google Drive, which syncs to the iPad.](docs/architecture.svg)
 ```sh
 docker run -d -p 1969:1969 --restart unless-stopped zotero/translation-server
 ```
-> **On 32-bit ARM (armv7l / armhf, e.g. ODROID XU4):** the Docker image is
+> **On 32-bit ARM (armv7l / armhf):** the Docker image is
 > amd64-only. Run translation-server natively on Node instead — see
 > [translation-server-armhf.md](translation-server-armhf.md).
 
