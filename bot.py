@@ -4,8 +4,8 @@
 Send the bot a link. If it's a paper: index it in Zotero (Web API) and drop the
 PDF into a Google Drive folder (via rclone) that your iPad reader syncs.
 
-Run: python bot.py            (long-poll loop, needs env vars below)
-     python bot.py --selftest (offline asserts, no network)
+Run:   python bot.py   (long-poll loop, needs env vars below)
+Tests: pytest          (offline, no network)
 
 Env (see README): TELEGRAM_TOKEN ALLOWED_CHAT_ID ZOTERO_API_KEY ZOTERO_USER_ID
                   UNPAYWALL_EMAIL [ZOTERO_COLLECTION=<name>]
@@ -389,76 +389,17 @@ def telegram_loop(env):
             )
 
 
-def selftest():
-    paper = {
-        "itemType": "journalArticle",
-        "title": "Attention Is All You Need",
-        "date": "2017-06-12",
-        "creators": [{"lastName": "Vaswani", "firstName": "Ashish"}],
-        "DOI": "10.5555/3295222.3295349",
-        "attachments": [{"mimeType": "application/pdf", "url": "http://x/p.pdf"}],
-    }
-    news = {"itemType": "webpage", "title": "Some News", "date": "2024"}
-    assert is_paper([paper]) is True
-    assert is_paper([news]) is False
-    assert is_paper([]) is False
-    assert slugify(paper) == "Vaswani_2017_Attention_Is_All_You_Need", slugify(paper)
-    assert slugify(news) == "Unknown_2024_Some_News", slugify(news)
-    assert (
-        first_url("see https://arxiv.org/abs/1706.03762).")
-        == "https://arxiv.org/abs/1706.03762"
-    )
-    assert first_url("no link here") is None
-    assert pdf_url_from_item(paper) == "http://x/p.pdf"
-    assert pdf_url_from_item(news) is None
-    assert doi_of(paper) == "10.5555/3295222.3295349"
-    assert (
-        arxiv_pdf("https://arxiv.org/abs/2605.30621")
-        == "https://arxiv.org/pdf/2605.30621"
-    )
-    assert arxiv_pdf("https://example.com/x") is None
-
-    p = build_payload(paper)
-    assert {"tag": "paperbot"} in p["tags"]
-    assert "attachments" not in p and "notes" not in p
-    assert "collections" not in p
-    assert build_payload(paper, "ABCD")["collections"] == ["ABCD"]
-    tagged = dict(paper, tags=[{"tag": "nlp"}, {"tag": "paperbot"}])
-    assert build_payload(tagged)["tags"] == [{"tag": "nlp"}, {"tag": "paperbot"}]
-    cols = [{"key": "K1", "name": "PAPERBOT", "parent": None}]
-    assert pick_collection(paper, cols, None) == "PAPERBOT"  # default
-    assert pick_collection(paper, cols, "ML Papers") == "ML Papers"  # env override
-    # ensure resolves an existing collection without hitting the network
-    assert zotero_ensure_collection("PAPERBOT", cols, "k", "u") == "K1"
-    assert _doi_matches({"DOI": "10.5555/X"}, "10.5555/x")  # case-insensitive
-    assert _doi_matches({"extra": "DOI: 10.1/abc"}, "10.1/abc")  # stashed in extra
-    assert not _doi_matches({"DOI": "10.9/z"}, "10.1/x")
-    assert not _doi_matches({}, None)
-    # arXiv-style dedup: no DOI, fall back to exact title
-    assert _item_matches(
-        {"title": "Attention Is All You Need"}, None, "attention is all you need"
-    )
-    assert _item_matches({"DOI": "10.5555/X"}, "10.5555/x", "different title")
-    assert not _item_matches({"title": "Some Paper"}, None, "Other Paper")
-    assert not _item_matches({}, None, "")
-    assert zotero_find_existing({}, "COLL", "k", "u") is None  # no id, no request
-    print("selftest ok")
-
-
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        selftest()
-    else:
-        required = [
-            "TELEGRAM_TOKEN",
-            "ALLOWED_CHAT_ID",
-            "ZOTERO_API_KEY",
-            "ZOTERO_USER_ID",
-            "UNPAYWALL_EMAIL",
-        ]
-        env = {k: os.environ.get(k) for k in required}
-        env["ZOTERO_COLLECTION"] = os.environ.get("ZOTERO_COLLECTION")  # optional
-        missing = [k for k, v in env.items() if not v and k in required]
-        if missing:
-            sys.exit("Missing env vars: " + ", ".join(missing))
-        telegram_loop(env)
+    required = [
+        "TELEGRAM_TOKEN",
+        "ALLOWED_CHAT_ID",
+        "ZOTERO_API_KEY",
+        "ZOTERO_USER_ID",
+        "UNPAYWALL_EMAIL",
+    ]
+    env = {k: os.environ.get(k) for k in required}
+    env["ZOTERO_COLLECTION"] = os.environ.get("ZOTERO_COLLECTION")  # optional
+    missing = [k for k, v in env.items() if not v and k in required]
+    if missing:
+        sys.exit("Missing env vars: " + ", ".join(missing))
+    telegram_loop(env)
