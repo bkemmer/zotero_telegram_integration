@@ -1,3 +1,4 @@
+# Install: sudo cp paperbot.service /etc/systemd/system/ && sudo systemctl daemon-reload
 [Unit]
 Description=Paper-link Telegram bot (Zotero + Google Drive)
 After=network-online.target docker.service
