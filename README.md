@@ -30,23 +30,35 @@ on a machine with a browser and paste the token back.
 ### 3. Install
 Run `rclone config` as yourself first (step 2), then from the repo dir:
 ```sh
+sudo apt install python3-venv   # setup.sh builds the /opt/paperbot venv with this
 sudo ./setup.sh
 ```
 This creates the `paperbot` system user, the `/opt/paperbot` venv, copies `bot.py`
-and your `rclone.conf` in, installs the systemd unit, and stubs an empty
-`/etc/paperbot/env` (a re-run never overwrites an existing one).
+and your `rclone.conf` in, installs the systemd unit, and stubs an
+`/etc/paperbot/env` with placeholders (a re-run never overwrites an existing one).
 
 ### 4. Secrets
-Fill in the env file `setup.sh` created:
+Replace the placeholder env file `setup.sh` created. Tips go **above** each var:
+systemd's `EnvironmentFile` only strips full-line comments, so a trailing `# …`
+would end up inside the value.
 ```sh
 sudo tee /etc/paperbot/env >/dev/null <<'EOF'
-TELEGRAM_TOKEN=...        # from @BotFather
-ALLOWED_CHAT_ID=...       # your Telegram user id (from @userinfobot) — only you can use the bot
-ZOTERO_API_KEY=...        # zotero.org/settings/keys (needs write access)
-ZOTERO_USER_ID=...        # the numeric "Your userID" on that same page
+# from @BotFather
+TELEGRAM_TOKEN=...
+# your Telegram user id (from @userinfobot) — only you can use the bot
+ALLOWED_CHAT_ID=...
+# zotero.org/settings/keys (needs write access)
+ZOTERO_API_KEY=...
+# the numeric "Your userID" on that same page
+ZOTERO_USER_ID=...
 UNPAYWALL_EMAIL=you@example.com
-# optional: ZOTERO_COLLECTION=ML Papers  # collection to file papers into (default: PAPERBOT, auto-created)
-# optional: RCLONE_REMOTE=gdrive  DRIVE_DIR=Papers  TRANSLATION_SERVER=http://localhost:1969
+
+# optional — uncomment to override defaults:
+# collection to file papers into (default: PAPERBOT, auto-created)
+#ZOTERO_COLLECTION=ML Papers
+#RCLONE_REMOTE=gdrive
+#DRIVE_DIR=Papers
+#TRANSLATION_SERVER=http://localhost:1969
 EOF
 sudo chmod 600 /etc/paperbot/env
 ```
@@ -66,7 +78,7 @@ journalctl -u paperbot -f
 ```
 
 ## Verify
-- Offline logic: `python bot.py --selftest`  → prints `selftest ok`.
+- Offline logic: `pytest` → runs the offline unit tests (needs the dev deps: `uv sync`, or `pip install pytest pytest-mock`).
 - Live: message the bot an `arxiv.org/abs/...` link → a Zotero item appears and
   the PDF lands in `gdrive:Papers/` (then on your iPad after sync). A news link →
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".

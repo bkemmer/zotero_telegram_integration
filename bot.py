@@ -42,7 +42,7 @@ PAPER_TYPES = {
 URL_RE = re.compile(r"https?://[^\s]+")
 
 
-# --- pure helpers (covered by --selftest) -----------------------------------
+# --- pure helpers (covered by tests/test_bot.py) ----------------------------
 
 
 def is_paper(items):
