@@ -83,6 +83,18 @@ After updating `bot.py` or `/etc/paperbot/env`, restart the service:
 sudo systemctl restart paperbot
 ```
 
+## Update
+To deploy changes from your local repo to the VPS:
+```sh
+scp bot.py paperbot@your-vps:/opt/paperbot/bot.py
+ssh paperbot@your-vps "sudo systemctl restart paperbot"
+```
+Or re-run `setup.sh` (also updates the service unit if changed):
+```sh
+sudo ./setup.sh
+sudo systemctl restart paperbot
+```
+
 ## Verify
 - Offline logic: `pytest` → runs the offline unit tests (needs the dev deps: `uv sync`, or `pip install pytest pytest-mock`).
 - Live: message the bot an `arxiv.org/abs/...` link → a Zotero item appears and
