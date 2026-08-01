@@ -260,6 +260,15 @@ def unpaywall_pdf(doi, email):
     return loc.get("url_for_pdf")
 
 
+def get_local_ip():
+    """Return the local network IP address."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        # connect to an external address (no data sent) to discover the
+        # outgoing interface the kernel would use for internet traffic.
+        s.connect(("8.8.8.8", 53))
+        return s.getsockname()[0]
+
+
 def _check_public_url(url):
     """Reject non-http(s) URLs and hosts resolving to private/loopback/link-local
     addresses. Blocks SSRF (cloud metadata 169.254.169.254, localhost, LAN) via a
@@ -435,7 +444,14 @@ def telegram_loop(env):
                 print(f"ignoring message from unauthorized chat {chat_id}", flush=True)
                 continue  # ponytail: single-user allowlist
             print(f"message from {chat_id}: {msg.get('text', '')!r}", flush=True)
-            reply = handle(msg.get("text", ""), env)
+            text = (msg.get("text") or "").strip()
+            if text.lower() == "whoami":
+                try:
+                    reply = f"Your local IP: {get_local_ip()}"
+                except Exception as e:
+                    reply = f"Couldn't determine local IP: {e}"
+            else:
+                reply = handle(text, env)
             requests.post(
                 f"{api}/sendMessage",
                 data={"chat_id": chat_id, "text": reply},
