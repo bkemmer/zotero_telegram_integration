@@ -83,6 +83,9 @@ journalctl -u paperbot -f
   the PDF lands in `gdrive:Papers/` (then on your iPad after sync). A news link →
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".
 
+## Commands
+- `whoami` — returns the bot's local network IP (useful for debugging on a headless VPS).
+
 ## Notes
 - Duplicates are skipped: before adding, the bot lists the target collection (`PAPERBOT` by
   default) and, if the same paper is already there — matched by DOI, or by exact title when
