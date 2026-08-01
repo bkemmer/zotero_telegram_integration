@@ -39,6 +39,26 @@ def test_doi_of():
     assert bot.doi_of(PAPER) == "10.5555/3295222.3295349"
 
 
+def test_normalize_url():
+    assert (
+        bot.normalize_url("https://arxiv.org/pdf/2607.19297")
+        == "https://arxiv.org/abs/2607.19297"
+    )
+    assert (
+        bot.normalize_url("https://arxiv.org/pdf/2607.19297.pdf")
+        == "https://arxiv.org/abs/2607.19297"
+    )
+    # non-arxiv urls pass through unchanged
+    assert (
+        bot.normalize_url("https://arxiv.org/abs/1706.03762")
+        == "https://arxiv.org/abs/1706.03762"
+    )
+    assert (
+        bot.normalize_url("https://doi.org/10.1234/abc")
+        == "https://doi.org/10.1234/abc"
+    )
+
+
 def test_arxiv_pdf():
     assert (
         bot.arxiv_pdf("https://arxiv.org/abs/2605.30621")

@@ -80,6 +80,17 @@ def pdf_url_from_item(item):
     return None
 
 
+def normalize_url(url):
+    # arxiv /pdf/<id> -> /abs/<id> so ponytail can translate the metadata.
+    # ponytail's arxiv translator only handles abstract/list pages, not direct
+    # pdf urls; after translation the item has no pdf attachment, but
+    # arxiv_pdf() below converts /abs/ back to /pdf/ for download.
+    m = re.match(r"https?://arxiv\.org/pdf/(\S+?)(?:\.pdf)?$", url or "")
+    if m:
+        return f"https://arxiv.org/abs/{m.group(1)}"
+    return url
+
+
 def arxiv_pdf(url):
     # ponytail: arxiv's translator only snapshots the abstract page (no pdf
     # attachment, no DOI), but /abs/<id> -> /pdf/<id> is a stable url pattern.
@@ -309,7 +320,7 @@ def to_drive(local_path, name):
 
 
 def handle(text, env):
-    url = first_url(text)
+    url = normalize_url(first_url(text))
     if not url:
         print("no url in message, ignoring", flush=True)
         return "No link found."
