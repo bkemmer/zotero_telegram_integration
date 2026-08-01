@@ -77,6 +77,12 @@ sudo usermod -aG systemd-journal $USER
 journalctl -u paperbot -f
 ```
 
+### 6. Restart
+After updating `bot.py` or `/etc/paperbot/env`, restart the service:
+```sh
+sudo systemctl restart paperbot
+```
+
 ## Verify
 - Offline logic: `pytest` → runs the offline unit tests (needs the dev deps: `uv sync`, or `pip install pytest pytest-mock`).
 - Live: message the bot an `arxiv.org/abs/...` link → a Zotero item appears and
