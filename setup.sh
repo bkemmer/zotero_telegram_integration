@@ -20,7 +20,9 @@ chown -R paperbot:paperbot "$APP"
 # move your rclone config in (run `rclone config` first, as yourself, not root).
 # sudo resets $HOME to /root, so resolve the invoking user's home explicitly.
 RCLONE_SRC="$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)/.config/rclone/rclone.conf"
-if [ -f "$RCLONE_SRC" ]; then
+if [ -f "$APP/rclone.conf" ]; then
+  : # already installed, skip
+elif [ -f "$RCLONE_SRC" ]; then
   install -o paperbot -g paperbot -m 600 "$RCLONE_SRC" "$APP/rclone.conf"
 else
   echo "WARN: no rclone.conf found — run 'rclone config' then copy it to $APP/rclone.conf"
