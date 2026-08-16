@@ -59,6 +59,25 @@ def test_normalize_url():
     )
 
 
+def test_resolve_url():
+    # bare arXiv id (with and without version)
+    assert bot.resolve_url("2608.11888v1") == "https://arxiv.org/abs/2608.11888v1"
+    assert (
+        bot.resolve_url("see arXiv:2608.11888 please")
+        == "https://arxiv.org/abs/2608.11888"
+    )
+    # full url wins over a bare id, /pdf/ normalized to /abs/
+    assert (
+        bot.resolve_url("https://arxiv.org/pdf/2607.19297 2608.11888")
+        == "https://arxiv.org/abs/2607.19297"
+    )
+    # non-arxiv urls pass through
+    assert (
+        bot.resolve_url("https://doi.org/10.1234/abc") == "https://doi.org/10.1234/abc"
+    )
+    assert bot.resolve_url("no link here") is None
+
+
 def test_arxiv_pdf():
     assert (
         bot.arxiv_pdf("https://arxiv.org/abs/2605.30621")

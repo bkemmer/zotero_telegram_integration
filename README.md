@@ -97,7 +97,7 @@ sudo systemctl restart paperbot
 
 ## Verify
 - Offline logic: `pytest` → runs the offline unit tests (needs the dev deps: `uv sync`, or `pip install pytest pytest-mock`).
-- Live: message the bot an `arxiv.org/abs/...` link → a Zotero item appears and
+- Live: message the bot an `arxiv.org/abs/...` link (or a bare arXiv id like `2608.11888v1`) → a Zotero item appears and
   the PDF lands in `gdrive:Papers/` (then on your iPad after sync). A news link →
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".
 

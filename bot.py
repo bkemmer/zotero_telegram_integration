@@ -40,6 +40,7 @@ PAPER_TYPES = {
     "report",
 }
 URL_RE = re.compile(r"https?://[^\s]+")
+ARXIV_ID_RE = re.compile(r"\b(\d{4}\.\d{4,5}(?:v\d+)?)\b")
 
 
 # --- pure helpers (covered by tests/test_bot.py) ----------------------------
@@ -89,6 +90,16 @@ def normalize_url(url):
     if m:
         return f"https://arxiv.org/abs/{m.group(1)}"
     return url
+
+
+def resolve_url(text):
+    """Message text -> paper url: first http(s) link (arxiv /pdf/ -> /abs/),
+    else a bare arXiv id like 2608.11888v1 -> https://arxiv.org/abs/<id>."""
+    url = first_url(text)
+    if url:
+        return normalize_url(url)
+    m = ARXIV_ID_RE.search(text or "")
+    return f"https://arxiv.org/abs/{m.group(1)}" if m else None
 
 
 def arxiv_pdf(url):
@@ -329,7 +340,7 @@ def to_drive(local_path, name):
 
 
 def handle(text, env):
-    url = normalize_url(first_url(text))
+    url = resolve_url(text)
     if not url:
         print("no url in message, ignoring", flush=True)
         return "No link found."
