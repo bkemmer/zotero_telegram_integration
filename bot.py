@@ -3,6 +3,8 @@
 
 Send the bot a link. If it's a paper: index it in Zotero (Web API) and drop the
 PDF into a Google Drive folder (via rclone) that your iPad reader syncs.
+Send the bot a PDF file and it asks, with buttons, which Drive subfolder to
+put it in.
 
 Run:   python bot.py   (long-poll loop, needs env vars below)
 Tests: pytest          (offline, no network)
@@ -20,6 +22,7 @@ import socket
 import ipaddress
 import subprocess
 import tempfile
+import uuid
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -71,6 +74,34 @@ def slugify(item):
     parts = [re.sub(r"[^A-Za-z0-9]", "", author), year] + words
     name = "_".join(p for p in parts if p)
     return name[:120] or "paper"
+
+
+def safe_name(file_name):
+    """A user-supplied filename -> safe pdf basename (no extension, no path).
+
+    The name comes straight from Telegram and ends up in an rclone destination,
+    so strip the directory part (blocks ../ escaping the chosen folder) and keep
+    only harmless characters."""
+    name = os.path.basename(file_name or "").strip()
+    if name.lower().endswith(".pdf"):
+        name = name[:-4]
+    name = re.sub(r"[^A-Za-z0-9._ -]", "_", name).strip(". ")
+    return name[:120] or "document"
+
+
+def folder_keyboard(token, subdirs):
+    """Inline keyboard: one row per Drive subfolder, then root, then cancel.
+
+    Buttons carry `<token>:<index>` — Telegram caps callback_data at 64 bytes,
+    which a file_id would blow past, hence the index into PENDING."""
+    rows = [
+        [{"text": d, "callback_data": f"{token}:{i}"}] for i, d in enumerate(subdirs)
+    ]
+    rows.append(
+        [{"text": f"\U0001f4c1 {DRIVE_DIR} (root)", "callback_data": f"{token}:r"}]
+    )
+    rows.append([{"text": "\u2716 Cancel", "callback_data": f"{token}:x"}])
+    return {"inline_keyboard": rows}
 
 
 def pdf_url_from_item(item):
@@ -330,10 +361,22 @@ def download(url):
     raise ValueError(f"too many redirects: {url}")
 
 
-def to_drive(local_path, name):
-    dest = f"{RCLONE_REMOTE}:{DRIVE_DIR}/{name}.pdf"
+def to_drive(local_path, name, subdir=None):
+    folder = f"{DRIVE_DIR}/{subdir}" if subdir else DRIVE_DIR
+    dest = f"{RCLONE_REMOTE}:{folder}/{name}.pdf"
     subprocess.run(["rclone", "copyto", local_path, dest], check=True)
     return dest
+
+
+def drive_subdirs():
+    """Subfolder names directly under DRIVE_DIR on the remote."""
+    out = subprocess.run(
+        ["rclone", "lsf", "--dirs-only", f"{RCLONE_REMOTE}:{DRIVE_DIR}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return sorted(d.rstrip("/") for d in out.splitlines() if d.strip())
 
 
 # --- pipeline ----------------------------------------------------------------
@@ -423,6 +466,98 @@ def handle(text, env):
     return "\n".join(lines)
 
 
+# --- pdf upload: ask which drive subfolder -----------------------------------
+
+PENDING = {}  # chat_id -> (token, local_path, name, subdirs)
+# ponytail: in-memory, one pending upload per chat (a new PDF drops the previous
+# one and its temp file, so nothing accumulates). A restart forgets the prompt;
+# PrivateTmp= takes the temp file with it and re-sending the PDF costs nothing.
+
+
+def tg(api, method, **data):
+    """Call a Telegram bot API method, return the parsed response."""
+    return requests.post(f"{api}/{method}", data=data, timeout=30).json()
+
+
+def _drop_pending(chat_id):
+    """Forget a chat's pending upload and delete its temp file."""
+    prev = PENDING.pop(chat_id, None)
+    if prev:
+        try:
+            os.remove(prev[1])
+        except OSError:
+            pass
+
+
+def handle_document(doc, chat_id, api, token):
+    """A PDF arrived: fetch it, then ask which Drive subfolder with buttons.
+    Returns a reply string, or None when the keyboard is the reply."""
+    file_name = doc.get("file_name") or ""
+    if doc.get("mime_type") != "application/pdf" and not file_name.lower().endswith(
+        ".pdf"
+    ):
+        return "Only PDFs, sorry."
+    try:
+        res = tg(api, "getFile", file_id=doc["file_id"])
+        if not res.get("ok"):
+            desc = res.get("description") or "unknown error"
+            if "too big" in desc.lower():
+                return "That PDF is too big — Telegram caps bot downloads at 20 MB."
+            return f"Telegram refused the file: {desc}"
+        url = f"https://api.telegram.org/file/bot{token}/{res['result']['file_path']}"
+        path = download(url)
+    except Exception as e:
+        # that url embeds the bot token and requests errors quote the url back
+        err = str(e).replace(token, "<redacted>")
+        print(f"pdf fetch failed: {err}", flush=True)
+        return f"Couldn't fetch that PDF: {err}"
+    try:
+        subdirs = drive_subdirs()
+    except Exception as e:
+        print(f"drive listing failed: {e}", flush=True)
+        os.remove(path)
+        return f"Couldn't list Drive folders: {e}"
+
+    _drop_pending(chat_id)
+    tok = uuid.uuid4().hex[:8]
+    name = safe_name(file_name)
+    PENDING[chat_id] = (tok, path, name, subdirs)
+    print(f"pdf pending: {name}.pdf ({len(subdirs)} folders)", flush=True)
+    tg(
+        api,
+        "sendMessage",
+        chat_id=chat_id,
+        text=f"Where should {name}.pdf go?",
+        reply_markup=json.dumps(folder_keyboard(tok, subdirs)),
+    )
+    return None
+
+
+def handle_callback(cq, chat_id, api):
+    """A folder button was tapped: upload the pending PDF there. Returns the
+    text that replaces the keyboard message."""
+    tg(api, "answerCallbackQuery", callback_query_id=cq["id"])
+    tok, _, choice = (cq.get("data") or "").partition(":")
+    pending = PENDING.get(chat_id)
+    if not pending or pending[0] != tok:  # keyboard from an older/forgotten PDF
+        return "That prompt expired — send the PDF again."
+    _, path, name, subdirs = pending
+    try:
+        if choice == "x":
+            print("upload cancelled", flush=True)
+            return "Cancelled."
+        subdir = None if choice == "r" else subdirs[int(choice)]
+        try:
+            dest = to_drive(path, name, subdir)
+        except Exception as e:
+            print(f"drive upload failed: {e}", flush=True)
+            return f"\u2717 Drive failed: {e}"
+        print(f"uploaded to {dest}", flush=True)
+        return f"\u2713 Drive: {dest.split(':', 1)[1]}"
+    finally:
+        _drop_pending(chat_id)
+
+
 # --- telegram long-poll ------------------------------------------------------
 
 
@@ -447,6 +582,20 @@ def telegram_loop(env):
             continue
         for upd in updates:
             offset = upd["update_id"] + 1
+            cq = upd.get("callback_query")
+            if cq:
+                chat_id = str(cq["message"]["chat"]["id"])
+                if chat_id != allowed:
+                    print(f"ignoring callback from chat {chat_id}", flush=True)
+                    continue
+                tg(
+                    api,
+                    "editMessageText",
+                    chat_id=chat_id,
+                    message_id=cq["message"]["message_id"],
+                    text=handle_callback(cq, chat_id, api),
+                )
+                continue
             msg = upd.get("message") or upd.get("channel_post")
             if not msg:
                 continue
@@ -455,6 +604,12 @@ def telegram_loop(env):
                 print(f"ignoring message from unauthorized chat {chat_id}", flush=True)
                 continue  # ponytail: single-user allowlist
             print(f"message from {chat_id}: {msg.get('text', '')!r}", flush=True)
+            doc = msg.get("document")
+            if doc:
+                reply = handle_document(doc, chat_id, api, token)
+                if reply:
+                    tg(api, "sendMessage", chat_id=chat_id, text=reply)
+                continue
             text = (msg.get("text") or "").strip()
             if text.lower() == "whoami":
                 try:
@@ -463,11 +618,7 @@ def telegram_loop(env):
                     reply = f"Couldn't determine local IP: {e}"
             else:
                 reply = handle(text, env)
-            requests.post(
-                f"{api}/sendMessage",
-                data={"chat_id": chat_id, "text": reply},
-                timeout=30,
-            )
+            tg(api, "sendMessage", chat_id=chat_id, text=reply)
 
 
 if __name__ == "__main__":

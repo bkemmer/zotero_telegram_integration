@@ -101,6 +101,13 @@ sudo systemctl restart paperbot
   the PDF lands in `gdrive:Papers/` (then on your iPad after sync). A news link →
   "Not a paper, ignored." A paywalled, non-open DOI → indexed in Zotero + "no open PDF".
 
+## Sending a PDF
+Send the bot a PDF file (not a link) and it replies with a button per subfolder of
+`gdrive:Papers/` — tap one and the file is uploaded there under its original name
+(plus a root option and Cancel). Folders are listed live with
+`rclone lsf --dirs-only`, so create them in Drive and they show up on the next PDF.
+Telegram's bot API caps downloads at 20 MB; larger files are rejected with a note.
+
 ## Commands
 - `whoami` — returns the bot's local network IP (useful for debugging on a headless VPS).
 

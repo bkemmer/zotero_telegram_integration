@@ -150,3 +150,34 @@ def test_ensure_collection_creates_via_api(mocker):
     key = bot.zotero_ensure_collection("Fresh", [], "k", "u")
     assert key == "NEW"
     post.assert_called_once()
+
+
+def test_safe_name():
+    assert bot.safe_name("Attention Is All You Need.pdf") == "Attention Is All You Need"
+    assert bot.safe_name("../../etc/passwd.pdf") == "passwd"  # no traversal
+    assert bot.safe_name("a/b/c.PDF") == "c"
+    assert "/" not in bot.safe_name("x/../y.pdf")
+    assert bot.safe_name("") == "document"
+    assert bot.safe_name("...") == "document"
+    assert bot.safe_name("x" * 300) == "x" * 120
+
+
+def test_folder_keyboard():
+    kb = bot.folder_keyboard("deadbeef", ["ToRead", "Books"])
+    rows = kb["inline_keyboard"]
+    assert [r[0]["text"] for r in rows[:2]] == ["ToRead", "Books"]
+    assert rows[0][0]["callback_data"] == "deadbeef:0"
+    assert rows[-2][0]["callback_data"] == "deadbeef:r"  # root
+    assert rows[-1][0]["callback_data"] == "deadbeef:x"  # cancel
+    # telegram rejects callback_data over 64 bytes
+    assert all(len(b["callback_data"].encode()) <= 64 for r in rows for b in r)
+
+
+def test_to_drive_subdir(mocker):
+    run = mocker.patch("bot.subprocess.run")
+    assert (
+        bot.to_drive("/tmp/x.pdf", "Paper", "ToRead")
+        == "gdrive:Papers/ToRead/Paper.pdf"
+    )
+    assert bot.to_drive("/tmp/x.pdf", "Paper") == "gdrive:Papers/Paper.pdf"
+    assert run.call_count == 2
