@@ -134,6 +134,12 @@ subcollection of `PAPERBOT`. Tap one to also file the paper there. It stays in i
 collection, which is what duplicate detection lists, so re-sending the link still says
 "Already in". No subcollections yet → no buttons.
 
+Or name it in the same message: words after the link that match a `PAPERBOT` subcollection
+file the paper there right away, e.g. `https://arxiv.org/abs/2603.09180 visao nlp`.
+Matching ignores accents and case (`visao` matches `Visão`), multi-word names work, and only
+whole words count. Re-sending an already-indexed paper with a word files it too. Words that
+match nothing are ignored.
+
 ## Notes
 - Duplicates are skipped: before adding, the bot lists the target collection (`PAPERBOT` by
   default) and, if the same paper is already there — matched by DOI, or by exact title when
