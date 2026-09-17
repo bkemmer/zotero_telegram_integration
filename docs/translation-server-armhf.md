@@ -6,10 +6,13 @@ Reinstall guide for running Zotero `translation-server` natively on a 32-bit ARM
 
 ## Why not Docker?
 
-The official `zotero/translation-server` image is **amd64-only** — there is no
+No published `zotero/translation-server` image matches this board — there is no
 `arm/v7` manifest, so `docker run` on the XU4 fails with `exec format error`.
-translation-server is pure JavaScript (no mandatory native deps), so we run it
-directly on Node instead.
+
+Native Node is the better path on **amd64** too: the current tags (`latest`,
+`2.0.6`) are arm64-only and the last amd64 tag is `2.0.4` from 2021 — see
+[oci-setup.md](oci-setup.md). translation-server is pure JavaScript (no mandatory
+native deps), so we run it directly on Node everywhere.
 
 ## Node version
 

@@ -10,13 +10,21 @@ and Google Drive, which syncs to the iPad.](docs/architecture.svg)
 
 ## VPS setup (in order)
 
-### 1. translation-server (Docker)
-```sh
-docker run -d -p 1969:1969 --restart unless-stopped zotero/translation-server
-```
-> **On 32-bit ARM (armv7l / armhf):** the Docker image is
-> amd64-only. Run translation-server natively on Node instead — see
-> [translation-server-armhf.md](docs/translation-server-armhf.md).
+On an Oracle Cloud Always Free VM, read [oci-setup.md](docs/oci-setup.md) first —
+it covers swap, the firewall and host-specific steps, then sends you back here.
+
+### 1. translation-server
+Run it natively on Node 22 — see
+[translation-server-armhf.md](docs/translation-server-armhf.md); the build is the
+same on amd64, only the unit's node path differs.
+
+> **Docker only if a published image matches your architecture.** The current
+> `zotero/translation-server` tags (`latest`, `2.0.6`) are **arm64-only**, the last
+> amd64 tag is `2.0.4` (2021), and there is no `arm/v7` manifest at all. On arm64:
+> ```sh
+> docker run -d -p 127.0.0.1:1969:1969 --restart unless-stopped zotero/translation-server
+> ```
+> Bind loopback — the bot talks to it locally, so the port needs no public exposure.
 
 ### 2. rclone + Google Drive remote
 ```sh
