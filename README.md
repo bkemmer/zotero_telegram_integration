@@ -120,8 +120,13 @@ Telegram's bot API caps downloads at 20 MB; larger files are rejected with a not
 - `whoami` — returns the bot's local network IP (useful for debugging on a headless VPS).
 - `/subcollection <name>` — creates a Zotero collection `<name>` under `PAPERBOT` (which is
   created too if missing); sending an existing name just replies "already exists". Sent
-  without a name (e.g. Tab-completed from the menu), the bot asks for it — just reply. The bot
-  registers it in Telegram's `/` menu on startup, so no BotFather `/setcommands` step.
+  without a name (e.g. Tab-completed from the menu), the bot asks for it — just reply.
+- `/listSubcollections` — lists the subcollections of `PAPERBOT` by name. The name prompt
+  above links to it too.
+
+The bot registers both in Telegram's `/` menu on startup, so no BotFather `/setcommands`
+step. Telegram only allows lowercase menu names, so the menu shows `/listsubcollections`;
+commands are matched case-insensitively, so either spelling works when typed.
 
 ## Filing into a subcollection
 When a paper is added, or found already indexed, the reply carries one button per

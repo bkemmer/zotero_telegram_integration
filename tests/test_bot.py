@@ -202,6 +202,37 @@ def test_subcollection_name():
     assert bot.subcollection_name({"text": "NLP", "reply_to_message": other}) is None
 
 
+def test_command():
+    assert bot.command("/listSubcollections") == ("/listsubcollections", "")
+    assert bot.command("/Subcollection@paper_bot  Deep RL ") == (
+        "/subcollection",
+        "Deep RL",
+    )
+
+
+def test_subcollection_name_command_in_reply():
+    # a command typed into the name prompt is a command, not a collection name
+    asked = {"text": bot.SUBCOLLECTION_PROMPT}
+    msg = {"text": "/listSubcollections", "reply_to_message": asked}
+    assert bot.subcollection_name(msg) is None
+
+
+def test_list_subcollections(mocker):
+    env = {"ZOTERO_API_KEY": "k", "ZOTERO_USER_ID": "u"}
+    cols = mocker.patch("bot.zotero_collections")
+    cols.return_value = [
+        {"key": "P1", "name": "PAPERBOT", "parent": None},
+        {"key": "C2", "name": "vision", "parent": "P1"},
+        {"key": "C1", "name": "NLP", "parent": "P1"},
+        {"key": "C3", "name": "Elsewhere", "parent": "X9"},
+    ]
+    assert (
+        bot.list_subcollections(env) == "PAPERBOT subcollections (2):\n• NLP\n• vision"
+    )
+    cols.return_value = cols.return_value[:1]
+    assert bot.list_subcollections(env).startswith("No PAPERBOT subcollections yet")
+
+
 def test_file_keyboard():
     cols = [
         {"key": "P1", "name": "PAPERBOT", "parent": None},
