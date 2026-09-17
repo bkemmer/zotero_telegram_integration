@@ -1,3 +1,5 @@
+import json
+
 import bot
 
 PAPER = {
@@ -150,6 +152,68 @@ def test_ensure_collection_creates_via_api(mocker):
     key = bot.zotero_ensure_collection("Fresh", [], "k", "u")
     assert key == "NEW"
     post.assert_called_once()
+
+
+def test_ensure_collection_with_parent(mocker):
+    cols = [
+        {"key": "P1", "name": "PAPERBOT", "parent": None},
+        {"key": "C1", "name": "Sub", "parent": "P1"},
+        {"key": "C2", "name": "Other", "parent": "X9"},
+    ]
+    post = mocker.patch("bot.requests.post")
+    assert bot.zotero_ensure_collection("Sub", cols, "k", "u", parent="P1") == "C1"
+    post.assert_not_called()
+    # same name under a different parent is a different collection: create it
+    post.return_value.json.return_value = {"successful": {"0": {"key": "NEW"}}}
+    assert bot.zotero_ensure_collection("Other", cols, "k", "u", parent="P1") == "NEW"
+    body = json.loads(post.call_args.kwargs["data"])
+    assert body == [{"name": "Other", "parentCollection": "P1"}]
+
+
+def test_new_subcollection(mocker):
+    env = {"ZOTERO_API_KEY": "k", "ZOTERO_USER_ID": "u"}
+    mocker.patch(
+        "bot.zotero_collections",
+        return_value=[
+            {"key": "P1", "name": "PAPERBOT", "parent": None},
+            {"key": "C1", "name": "Sub", "parent": "P1"},
+        ],
+    )
+    post = mocker.patch("bot.requests.post")
+    post.return_value.json.return_value = {"successful": {"0": {"key": "NEW"}}}
+    assert bot.new_subcollection("   ", env) == "Usage: /subcollection <name>"
+    assert bot.new_subcollection(" Sub ", env).startswith("↺ PAPERBOT › Sub already")
+    post.assert_not_called()
+    assert bot.new_subcollection("Fresh", env) == "✓ Created PAPERBOT › Fresh (NEW)"
+    post.assert_called_once()
+
+
+def test_file_keyboard():
+    cols = [
+        {"key": "P1", "name": "PAPERBOT", "parent": None},
+        {"key": "C2", "name": "vision", "parent": "P1"},
+        {"key": "C1", "name": "NLP", "parent": "P1"},
+        {"key": "C3", "name": "Elsewhere", "parent": "X9"},
+    ]
+    kb = bot.file_keyboard("ITEMKEY1", cols)
+    buttons = [r[0] for r in kb["inline_keyboard"]]
+    assert [b["text"] for b in buttons] == ["NLP", "vision"]  # only PAPERBOT's, sorted
+    assert buttons[0]["callback_data"] == "z:ITEMKEY1:C1"
+    assert all(len(b["callback_data"].encode()) <= 64 for b in buttons)
+    assert bot.file_keyboard(None, cols) is None  # zotero add failed: nothing to file
+    assert bot.file_keyboard("ITEMKEY1", cols[:1]) is None  # no subcollections yet
+
+
+def test_zotero_file_item(mocker):
+    get = mocker.patch("bot.requests.get")
+    get.return_value.json.return_value = {"data": {"version": 7, "collections": ["A"]}}
+    patch = mocker.patch("bot.requests.patch")
+    assert bot.zotero_file_item("I1", "B", "k", "u") is True
+    kw = patch.call_args.kwargs
+    assert json.loads(kw["data"]) == {"collections": ["A", "B"]}  # keeps existing
+    assert kw["headers"]["If-Unmodified-Since-Version"] == "7"
+    assert bot.zotero_file_item("I1", "A", "k", "u") is False  # already there
+    patch.assert_called_once()
 
 
 def test_safe_name():

@@ -4,7 +4,8 @@
 Send the bot a link. If it's a paper: index it in Zotero (Web API) and drop the
 PDF into a Google Drive folder (via rclone) that your iPad reader syncs.
 Send the bot a PDF file and it asks, with buttons, which Drive subfolder to
-put it in.
+put it in. /subcollection <name> creates a Zotero collection under PAPERBOT, and
+a paper's reply offers a button per such subcollection to file it there too.
 
 Run:   python bot.py   (long-poll loop, needs env vars below)
 Tests: pytest          (offline, no network)
@@ -32,6 +33,8 @@ MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB — a single PDF can't fill a 1GB VP
 TRANSLATION_SERVER = os.environ.get("TRANSLATION_SERVER", "http://localhost:1969")
 RCLONE_REMOTE = os.environ.get("RCLONE_REMOTE", "gdrive")
 DRIVE_DIR = os.environ.get("DRIVE_DIR", "Papers")
+# /subcollection creates collections under this one; papers can be filed into them
+SUBCOLLECTION_PARENT = "PAPERBOT"
 
 PAPER_TYPES = {
     "journalArticle",
@@ -102,6 +105,28 @@ def folder_keyboard(token, subdirs):
     )
     rows.append([{"text": "\u2716 Cancel", "callback_data": f"{token}:x"}])
     return {"inline_keyboard": rows}
+
+
+def file_keyboard(item_key, collections):
+    """Buttons filing Zotero item `item_key` into a subcollection of
+    SUBCOLLECTION_PARENT, or None when there's no item or no subcollection.
+
+    Buttons carry `z:<itemKey>:<collectionKey>` \u2014 Zotero keys are 8 chars, so it
+    fits Telegram's 64-byte callback_data cap with no pending state to keep."""
+    cols = collections or []
+    parent = next((c["key"] for c in cols if c["name"] == SUBCOLLECTION_PARENT), None)
+    subs = sorted(
+        (c for c in cols if parent and c["parent"] == parent),
+        key=lambda c: c["name"].lower(),
+    )
+    if not (item_key and subs):
+        return None
+    return {
+        "inline_keyboard": [
+            [{"text": c["name"], "callback_data": f"z:{item_key}:{c['key']}"}]
+            for c in subs
+        ]
+    }
 
 
 def pdf_url_from_item(item):
@@ -261,15 +286,21 @@ def zotero_find_existing(item, collection_key, api_key, user_id):
     return None
 
 
-def zotero_ensure_collection(name, collections, api_key, user_id):
-    """Return the key of top-level collection `name`, creating it if absent."""
+def zotero_ensure_collection(name, collections, api_key, user_id, parent=None):
+    """Return the key of collection `name`, creating it if absent. With `parent`
+    (a collection key) it must sit under that parent and is created there; without
+    one, any collection of that name matches (kept as-is so an existing, possibly
+    nested default collection is never duplicated)."""
     for c in collections:
-        if c["name"] == name:
+        if c["name"] == name and (parent is None or c["parent"] == parent):
             return c["key"]
+    body = {"name": name}
+    if parent:
+        body["parentCollection"] = parent
     r = requests.post(
         f"https://api.zotero.org/users/{user_id}/collections",
         headers={"Zotero-API-Key": api_key, "Content-Type": "application/json"},
-        data=json.dumps([{"name": name}]),
+        data=json.dumps([body]),
         timeout=30,
     )
     r.raise_for_status()
@@ -293,6 +324,31 @@ def zotero_add(item, api_key, user_id, collection_key=None):
     if res.get("failed"):
         raise RuntimeError(f"Zotero rejected item: {res['failed']}")
     return res["successful"]["0"]["key"]
+
+
+def zotero_file_item(item_key, collection_key, api_key, user_id):
+    """Add an existing item to a collection, keeping the ones it's already in.
+    Returns False if it was already there."""
+    url = f"https://api.zotero.org/users/{user_id}/items/{item_key}"
+    r = requests.get(url, headers={"Zotero-API-Key": api_key}, timeout=30)
+    r.raise_for_status()
+    data = r.json()["data"]
+    current = data.get("collections") or []
+    if collection_key in current:
+        return False
+    r = requests.patch(
+        url,
+        headers={
+            "Zotero-API-Key": api_key,
+            "Content-Type": "application/json",
+            # optimistic lock: Zotero answers 412 if the item changed since the GET
+            "If-Unmodified-Since-Version": str(data["version"]),
+        },
+        data=json.dumps({"collections": current + [collection_key]}),
+        timeout=30,
+    )
+    r.raise_for_status()
+    return True
 
 
 def unpaywall_pdf(doi, email):
@@ -391,20 +447,20 @@ def handle(text, env):
     url = resolve_url(text)
     if not url:
         print("no url in message, ignoring", flush=True)
-        return "No link found."
+        return "No link found.", None
     print(f"translating {url}", flush=True)
     try:
         items = translate(url)
     except Exception as e:
         print(f"translate failed: {e}", flush=True)
-        return f"Couldn't read that link: {e}"
+        return f"Couldn't read that link: {e}", None
     if not is_paper(items):
         # log what came back: "not a paper" is otherwise undiagnosable after the fact
         print(
             f"not a paper, ignoring: {[i.get('itemType') for i in items] or 'no items'}",
             flush=True,
         )
-        return "Not a paper, ignored."
+        return "Not a paper, ignored.", None
 
     item = items[0]
     title = item.get("title", "(untitled)")
@@ -441,10 +497,12 @@ def handle(text, env):
         if existing:
             print(f"already in zotero: {existing}", flush=True)
             lines.append(f"↺ Already in {name} ({existing}) — skipped")
-            return "\n".join(lines)
+            return "\n".join(lines), file_keyboard(existing, collections)
 
+    item_key = None
     try:
         key = zotero_add(item, env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"], coll_key)
+        item_key = key
         print(f"zotero add ok: {key}", flush=True)
         lines.append(f"✓ Zotero ({key})")
     except Exception as e:
@@ -459,7 +517,7 @@ def handle(text, env):
     if not pdf:
         print("no open pdf found", flush=True)
         lines.append("no open PDF")
-        return "\n".join(lines)
+        return "\n".join(lines), file_keyboard(item_key, collections)
     try:
         print(f"downloading pdf: {pdf}", flush=True)
         path = download(pdf)
@@ -472,7 +530,48 @@ def handle(text, env):
     except Exception as e:
         print(f"pdf/drive failed: {e}", flush=True)
         lines.append(f"✗ PDF/Drive failed: {e}")
-    return "\n".join(lines)
+    return "\n".join(lines), file_keyboard(item_key, collections)
+
+
+def new_subcollection(name, env):
+    """/subcollection <name>: create `name` under SUBCOLLECTION_PARENT (which is
+    created too if missing). Returns the reply text."""
+    name = name.strip()[:255]  # Zotero caps collection names at 255 chars
+    if not name:
+        return "Usage: /subcollection <name>"
+    label = f"{SUBCOLLECTION_PARENT} › {name}"
+    try:
+        api_key, user_id = env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"]
+        cols = zotero_collections(api_key, user_id)
+        parent = zotero_ensure_collection(SUBCOLLECTION_PARENT, cols, api_key, user_id)
+        key = zotero_ensure_collection(name, cols, api_key, user_id, parent=parent)
+    except Exception as e:
+        print(f"subcollection {label!r} failed: {e}", flush=True)
+        return f"✗ Couldn't create {label}: {e}"
+    if key in {c["key"] for c in cols}:
+        print(f"subcollection exists: {label} ({key})", flush=True)
+        return f"↺ {label} already exists ({key})"
+    print(f"subcollection created: {label} ({key})", flush=True)
+    return f"✓ Created {label} ({key})"
+
+
+def handle_file_callback(cq, env, api):
+    """A subcollection button under a paper was tapped: file the paper there.
+    Returns the text that replaces the message (dropping its buttons)."""
+    tg(api, "answerCallbackQuery", callback_query_id=cq["id"])
+    text = cq["message"].get("text", "")
+    try:
+        _, item_key, coll_key = (cq.get("data") or "").split(":")
+        api_key, user_id = env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"]
+        cols = zotero_collections(api_key, user_id)
+        name = next((c["name"] for c in cols if c["key"] == coll_key), coll_key)
+        added = zotero_file_item(item_key, coll_key, api_key, user_id)
+    except Exception as e:
+        print(f"filing failed: {e}", flush=True)
+        return f"{text}\n✗ Filing failed: {e}"
+    print(f"filed {item_key} into {name} ({coll_key}), added={added}", flush=True)
+    note = "" if added else " (already there)"
+    return f"{text}\n📁 {SUBCOLLECTION_PARENT} › {name}{note}"
 
 
 # --- pdf upload: ask which drive subfolder -----------------------------------
@@ -575,6 +674,22 @@ def telegram_loop(env):
     allowed = str(env["ALLOWED_CHAT_ID"])
     api = f"https://api.telegram.org/bot{token}"
     offset = None
+    # the "/" command menu in Telegram (what BotFather's /setcommands would set)
+    try:
+        tg(
+            api,
+            "setMyCommands",
+            commands=json.dumps(
+                [
+                    {
+                        "command": "subcollection",
+                        "description": f"New collection under {SUBCOLLECTION_PARENT}",
+                    }
+                ]
+            ),
+        )
+    except Exception as e:
+        print("setMyCommands failed:", str(e).replace(token, "<redacted>"), flush=True)
     print("paperbot: polling", flush=True)
     while True:
         try:
@@ -597,12 +712,18 @@ def telegram_loop(env):
                 if chat_id != allowed:
                     print(f"ignoring callback from chat {chat_id}", flush=True)
                     continue
+                # "z:" = file a paper into a subcollection; PDF-folder tokens are
+                # hex, so they can never start with "z"
+                if (cq.get("data") or "").startswith("z:"):
+                    text = handle_file_callback(cq, env, api)
+                else:
+                    text = handle_callback(cq, chat_id, api)
                 tg(
                     api,
                     "editMessageText",
                     chat_id=chat_id,
                     message_id=cq["message"]["message_id"],
-                    text=handle_callback(cq, chat_id, api),
+                    text=text,
                 )
                 continue
             msg = upd.get("message") or upd.get("channel_post")
@@ -620,14 +741,20 @@ def telegram_loop(env):
                     tg(api, "sendMessage", chat_id=chat_id, text=reply)
                 continue
             text = (msg.get("text") or "").strip()
+            cmd, _, arg = text.partition(" ")
+            markup = None
             if text.lower() == "whoami":
                 try:
                     reply = f"Your local IP: {get_local_ip()}"
                 except Exception as e:
                     reply = f"Couldn't determine local IP: {e}"
+            # "/cmd@botname" is what Telegram sends when picked from the menu
+            elif cmd.split("@")[0].lower() == "/subcollection":
+                reply = new_subcollection(arg, env)
             else:
-                reply = handle(text, env)
-            tg(api, "sendMessage", chat_id=chat_id, text=reply)
+                reply, markup = handle(text, env)
+            extra = {"reply_markup": json.dumps(markup)} if markup else {}
+            tg(api, "sendMessage", chat_id=chat_id, text=reply, **extra)
 
 
 if __name__ == "__main__":
