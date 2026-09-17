@@ -118,6 +118,16 @@ Telegram's bot API caps downloads at 20 MB; larger files are rejected with a not
 
 ## Commands
 - `whoami` — returns the bot's local network IP (useful for debugging on a headless VPS).
+- `/subcollection <name>` — creates a Zotero collection `<name>` under `PAPERBOT` (which is
+  created too if missing); sending an existing name just replies "already exists". Sent
+  without a name (e.g. Tab-completed from the menu), the bot asks for it — just reply. The bot
+  registers it in Telegram's `/` menu on startup, so no BotFather `/setcommands` step.
+
+## Filing into a subcollection
+When a paper is added, or found already indexed, the reply carries one button per
+subcollection of `PAPERBOT`. Tap one to also file the paper there. It stays in its default
+collection, which is what duplicate detection lists, so re-sending the link still says
+"Already in". No subcollections yet → no buttons.
 
 ## Notes
 - Duplicates are skipped: before adding, the bot lists the target collection (`PAPERBOT` by
