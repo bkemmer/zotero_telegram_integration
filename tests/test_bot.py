@@ -233,6 +233,53 @@ def test_list_subcollections(mocker):
     assert bot.list_subcollections(env).startswith("No PAPERBOT subcollections yet")
 
 
+def test_normalize():
+    assert bot.normalize("  Visão   COMPUTACIONAL ") == "visao computacional"
+    assert bot.normalize("Ação") == bot.normalize("acao") == "acao"
+    assert bot.normalize(None) == ""
+
+
+def test_matching_subcollections():
+    cols = [
+        {"key": "P1", "name": "PAPERBOT", "parent": None},
+        {"key": "C1", "name": "Visão", "parent": "P1"},
+        {"key": "C2", "name": "Deep RL", "parent": "P1"},
+        {"key": "C3", "name": "NLP", "parent": "P1"},
+        {"key": "C4", "name": "abs", "parent": "P1"},
+        {"key": "X1", "name": "robotics", "parent": None},  # not under PAPERBOT
+    ]
+
+    def names(text):
+        return [c["name"] for c in bot.matching_subcollections(text, cols)]
+
+    link = "https://arxiv.org/abs/2603.09180"
+    assert names(f"{link} visao") == ["Visão"]
+    assert names(f"{link} VISÃO, deep  rl") == ["Deep RL", "Visão"]  # multi-word too
+    assert names(f"{link} nlpx") == []  # whole words only
+    assert names(link) == []  # "abs" inside the url doesn't count
+    assert names("2603.09180 nlp") == ["NLP"]  # bare arXiv id + word
+    assert names(f"{link} robotics") == []  # only PAPERBOT's subcollections
+    assert bot.matching_subcollections(f"{link} nlp", None) == []  # fetch failed
+
+
+def test_file_into(mocker):
+    env = {"ZOTERO_API_KEY": "k", "ZOTERO_USER_ID": "u"}
+    fi = mocker.patch(
+        "bot.zotero_file_item", side_effect=[True, RuntimeError("412"), False]
+    )
+    matches = [
+        {"key": "C1", "name": "NLP"},
+        {"key": "C2", "name": "Vision"},
+        {"key": "C3", "name": "RL"},
+    ]
+    assert bot.file_into("I1", matches, env) == [
+        "📁 PAPERBOT › NLP",
+        "✗ Filing into PAPERBOT › Vision failed: 412",
+        "📁 PAPERBOT › RL (already there)",  # still ran after the failure
+    ]
+    assert fi.call_count == 3
+
+
 def test_file_keyboard():
     cols = [
         {"key": "P1", "name": "PAPERBOT", "parent": None},

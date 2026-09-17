@@ -23,6 +23,7 @@ import socket
 import ipaddress
 import subprocess
 import tempfile
+import unicodedata
 import uuid
 from urllib.parse import urljoin, urlparse
 
@@ -142,6 +143,27 @@ def subcollections(collections):
         (c for c in cols if parent and c["parent"] == parent),
         key=lambda c: c["name"].lower(),
     )
+
+
+def normalize(s):
+    """Accent- and case-insensitive form: "Visão  Computacional" -> "visao computacional"."""
+    decomposed = unicodedata.normalize("NFKD", s or "")
+    bare = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(bare.casefold().split())
+
+
+def matching_subcollections(text, collections):
+    """PAPERBOT subcollections named in a message's extra words, e.g. the "visão nlp"
+    in "<link> visão nlp". Names match accent/case-insensitively as whole-word
+    phrases (so "Deep RL" works, "nlp" doesn't hit "nlpx"); the link and any arXiv
+    id are removed first so url parts like "abs" or "pdf" never match."""
+    words = normalize(ARXIV_ID_RE.sub(" ", URL_RE.sub(" ", text or "")))
+    return [
+        c
+        for c in subcollections(collections)
+        if normalize(c["name"])
+        and re.search(rf"(?<!\w){re.escape(normalize(c['name']))}(?!\w)", words)
+    ]
 
 
 def file_keyboard(item_key, collections):
@@ -517,6 +539,7 @@ def handle(text, env):
             print(f"collection ensure failed: {e}", flush=True)
     else:
         print("collection: skipped (fetch failed), library root", flush=True)
+    matches = matching_subcollections(text, collections)  # "<link> nlp" -> [NLP]
 
     if coll_key:  # dedup against the collection listing (no search-index lag)
         try:
@@ -529,6 +552,7 @@ def handle(text, env):
         if existing:
             print(f"already in zotero: {existing}", flush=True)
             lines.append(f"↺ Already in {name} ({existing}) — skipped")
+            lines += file_into(existing, matches, env)
             return "\n".join(lines), file_keyboard(existing, collections)
 
     item_key = None
@@ -537,6 +561,7 @@ def handle(text, env):
         item_key = key
         print(f"zotero add ok: {key}", flush=True)
         lines.append(f"✓ Zotero ({key})")
+        lines += file_into(key, matches, env)
     except Exception as e:
         print(f"zotero add failed: {e}", flush=True)
         lines.append(f"✗ Zotero failed: {e}")
@@ -563,6 +588,25 @@ def handle(text, env):
         print(f"pdf/drive failed: {e}", flush=True)
         lines.append(f"✗ PDF/Drive failed: {e}")
     return "\n".join(lines), file_keyboard(item_key, collections)
+
+
+def file_into(item_key, matches, env):
+    """File an item into each matched subcollection; one reply line per match.
+    A failure is reported on its line and never stops the others or the pipeline."""
+    lines = []
+    for c in matches:
+        label = f"{SUBCOLLECTION_PARENT} › {c['name']}"
+        try:
+            added = zotero_file_item(
+                item_key, c["key"], env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"]
+            )
+        except Exception as e:
+            print(f"filing {item_key} into {label} failed: {e}", flush=True)
+            lines.append(f"✗ Filing into {label} failed: {e}")
+            continue
+        print(f"filed {item_key} into {label} ({c['key']}), added={added}", flush=True)
+        lines.append(f"📁 {label}" + ("" if added else " (already there)"))
+    return lines
 
 
 def new_subcollection(name, env):
