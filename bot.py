@@ -36,7 +36,10 @@ DRIVE_DIR = os.environ.get("DRIVE_DIR", "Papers")
 # /subcollection creates collections under this one; papers can be filed into them
 SUBCOLLECTION_PARENT = "PAPERBOT"
 # asked when /subcollection comes without a name; a reply to it is the name
-SUBCOLLECTION_PROMPT = f"Name for the new {SUBCOLLECTION_PARENT} subcollection?"
+SUBCOLLECTION_PROMPT = (
+    f"Name for the new {SUBCOLLECTION_PARENT} subcollection? "
+    "(existing ones: /listSubcollections)"
+)
 
 PAPER_TYPES = {
     "journalArticle",
@@ -117,10 +120,28 @@ def subcollection_name(msg):
     no per-chat state is kept and a link sent normally is never taken as a name.
     "/cmd@botname" is what Telegram sends when picked from the menu."""
     text = (msg.get("text") or "").strip()
-    if (msg.get("reply_to_message") or {}).get("text") == SUBCOLLECTION_PROMPT:
+    replied = (msg.get("reply_to_message") or {}).get("text") == SUBCOLLECTION_PROMPT
+    if replied and not text.startswith("/"):  # a command typed there stays a command
         return text
-    cmd, _, arg = text.partition(" ")
-    return arg.strip() if cmd.split("@")[0].lower() == "/subcollection" else None
+    cmd, arg = command(text)
+    return arg if cmd == "/subcollection" else None
+
+
+def command(text):
+    """ "/Cmd@botname arg" -> ("/cmd", "arg"). Lowercased, so /listSubcollections
+    matches however it's typed (Telegram's menu only allows lowercase names)."""
+    cmd, _, arg = (text or "").strip().partition(" ")
+    return cmd.split("@")[0].lower(), arg.strip()
+
+
+def subcollections(collections):
+    """Children of SUBCOLLECTION_PARENT, sorted by name ([] if it doesn't exist)."""
+    cols = collections or []
+    parent = next((c["key"] for c in cols if c["name"] == SUBCOLLECTION_PARENT), None)
+    return sorted(
+        (c for c in cols if parent and c["parent"] == parent),
+        key=lambda c: c["name"].lower(),
+    )
 
 
 def file_keyboard(item_key, collections):
@@ -129,12 +150,7 @@ def file_keyboard(item_key, collections):
 
     Buttons carry `z:<itemKey>:<collectionKey>` \u2014 Zotero keys are 8 chars, so it
     fits Telegram's 64-byte callback_data cap with no pending state to keep."""
-    cols = collections or []
-    parent = next((c["key"] for c in cols if c["name"] == SUBCOLLECTION_PARENT), None)
-    subs = sorted(
-        (c for c in cols if parent and c["parent"] == parent),
-        key=lambda c: c["name"].lower(),
-    )
+    subs = subcollections(collections)
     if not (item_key and subs):
         return None
     return {
@@ -571,6 +587,23 @@ def new_subcollection(name, env):
     return f"✓ Created {label} ({key})"
 
 
+def list_subcollections(env):
+    """/listSubcollections: reply text naming SUBCOLLECTION_PARENT's children."""
+    try:
+        cols = zotero_collections(env["ZOTERO_API_KEY"], env["ZOTERO_USER_ID"])
+    except Exception as e:
+        print(f"subcollection list failed: {e}", flush=True)
+        return f"✗ Couldn't list subcollections: {e}"
+    subs = subcollections(cols)
+    if not subs:
+        return (
+            f"No {SUBCOLLECTION_PARENT} subcollections yet — "
+            "create one with /subcollection"
+        )
+    lines = [f"{SUBCOLLECTION_PARENT} subcollections ({len(subs)}):"]
+    return "\n".join(lines + [f"• {c['name']}" for c in subs])
+
+
 def handle_file_callback(cq, env, api):
     """A subcollection button under a paper was tapped: file the paper there.
     Returns the text that replaces the message (dropping its buttons)."""
@@ -690,9 +723,11 @@ def telegram_loop(env):
     allowed = str(env["ALLOWED_CHAT_ID"])
     api = f"https://api.telegram.org/bot{token}"
     offset = None
-    # the "/" command menu in Telegram (what BotFather's /setcommands would set)
+    # the "/" command menu in Telegram (what BotFather's /setcommands would set).
+    # Names must be lowercase or Telegram rejects the whole list; typed commands
+    # are matched case-insensitively, so /listSubcollections works as typed.
     try:
-        tg(
+        res = tg(
             api,
             "setMyCommands",
             commands=json.dumps(
@@ -700,10 +735,16 @@ def telegram_loop(env):
                     {
                         "command": "subcollection",
                         "description": f"New collection under {SUBCOLLECTION_PARENT}",
-                    }
+                    },
+                    {
+                        "command": "listsubcollections",
+                        "description": f"List {SUBCOLLECTION_PARENT} subcollections",
+                    },
                 ]
             ),
         )
+        if not res.get("ok"):  # a rejection comes back as ok=false, not an exception
+            print(f"setMyCommands rejected: {res.get('description')}", flush=True)
     except Exception as e:
         print("setMyCommands failed:", str(e).replace(token, "<redacted>"), flush=True)
     print("paperbot: polling", flush=True)
@@ -767,6 +808,8 @@ def telegram_loop(env):
                 }
             elif sub_name is not None:
                 reply = new_subcollection(sub_name, env)
+            elif command(text)[0] == "/listsubcollections":
+                reply = list_subcollections(env)
             elif text.lower() == "whoami":
                 try:
                     reply = f"Your local IP: {get_local_ip()}"
