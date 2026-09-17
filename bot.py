@@ -199,6 +199,11 @@ def translate(url):
         headers={"Content-Type": "text/plain"},
         timeout=60,
     )
+    # 300 "Multiple Choices" = a listing/search page: the body is a dict of
+    # candidate items, not a list. raise_for_status() ignores 3xx, so without
+    # this the dict becomes [] and the user is told "Not a paper".
+    if r.status_code == 300:
+        raise RuntimeError("that page lists several items — send one paper's link")
     r.raise_for_status()
     data = r.json()
     return data if isinstance(data, list) else []
@@ -394,7 +399,11 @@ def handle(text, env):
         print(f"translate failed: {e}", flush=True)
         return f"Couldn't read that link: {e}"
     if not is_paper(items):
-        print("not a paper, ignoring", flush=True)
+        # log what came back: "not a paper" is otherwise undiagnosable after the fact
+        print(
+            f"not a paper, ignoring: {[i.get('itemType') for i in items] or 'no items'}",
+            flush=True,
+        )
         return "Not a paper, ignored."
 
     item = items[0]

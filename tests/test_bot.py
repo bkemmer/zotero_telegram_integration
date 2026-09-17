@@ -173,6 +173,22 @@ def test_folder_keyboard():
     assert all(len(b["callback_data"].encode()) <= 64 for r in rows for b in r)
 
 
+def test_translate_non_item_responses(mocker):
+    """The two ways translation-server answers without an item list."""
+    import pytest
+
+    post = mocker.patch("bot.requests.post")
+    # 300 = listing/search page: a dict of candidates, and 3xx slips past
+    # raise_for_status(), so it must raise rather than look like "not a paper"
+    post.return_value.status_code = 300
+    with pytest.raises(RuntimeError):
+        bot.translate("https://arxiv.org/list/cs.AI/2603")
+    # 200 with a non-list body is still nothing to index
+    post.return_value.status_code = 200
+    post.return_value.json.return_value = {"unexpected": "shape"}
+    assert bot.translate("https://example.com/x") == []
+
+
 def test_to_drive_subdir(mocker):
     run = mocker.patch("bot.subprocess.run")
     assert (
