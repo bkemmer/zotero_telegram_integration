@@ -188,6 +188,20 @@ def test_new_subcollection(mocker):
     post.assert_called_once()
 
 
+def test_subcollection_name():
+    asked = {"text": bot.SUBCOLLECTION_PROMPT}
+    assert bot.subcollection_name({"text": "/subcollection Deep RL"}) == "Deep RL"
+    assert bot.subcollection_name({"text": "/subcollection@paper_bot NLP"}) == "NLP"
+    assert bot.subcollection_name({"text": "/subcollection"}) == ""  # ask for it
+    assert bot.subcollection_name({"text": " Vision ", "reply_to_message": asked}) == (
+        "Vision"
+    )
+    # not a request: a normal link, or a reply to some other bot message
+    assert bot.subcollection_name({"text": "https://arxiv.org/abs/1"}) is None
+    other = {"text": "Where should x.pdf go?"}
+    assert bot.subcollection_name({"text": "NLP", "reply_to_message": other}) is None
+
+
 def test_file_keyboard():
     cols = [
         {"key": "P1", "name": "PAPERBOT", "parent": None},

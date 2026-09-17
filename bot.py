@@ -35,6 +35,8 @@ RCLONE_REMOTE = os.environ.get("RCLONE_REMOTE", "gdrive")
 DRIVE_DIR = os.environ.get("DRIVE_DIR", "Papers")
 # /subcollection creates collections under this one; papers can be filed into them
 SUBCOLLECTION_PARENT = "PAPERBOT"
+# asked when /subcollection comes without a name; a reply to it is the name
+SUBCOLLECTION_PROMPT = f"Name for the new {SUBCOLLECTION_PARENT} subcollection?"
 
 PAPER_TYPES = {
     "journalArticle",
@@ -105,6 +107,20 @@ def folder_keyboard(token, subdirs):
     )
     rows.append([{"text": "\u2716 Cancel", "callback_data": f"{token}:x"}])
     return {"inline_keyboard": rows}
+
+
+def subcollection_name(msg):
+    """The subcollection a message asks for: the name, "" when /subcollection
+    came without one (so ask), or None when it isn't a subcollection request.
+
+    A reply to SUBCOLLECTION_PROMPT is a name, matched by the prompt's text, so
+    no per-chat state is kept and a link sent normally is never taken as a name.
+    "/cmd@botname" is what Telegram sends when picked from the menu."""
+    text = (msg.get("text") or "").strip()
+    if (msg.get("reply_to_message") or {}).get("text") == SUBCOLLECTION_PROMPT:
+        return text
+    cmd, _, arg = text.partition(" ")
+    return arg.strip() if cmd.split("@")[0].lower() == "/subcollection" else None
 
 
 def file_keyboard(item_key, collections):
@@ -741,16 +757,21 @@ def telegram_loop(env):
                     tg(api, "sendMessage", chat_id=chat_id, text=reply)
                 continue
             text = (msg.get("text") or "").strip()
-            cmd, _, arg = text.partition(" ")
+            sub_name = subcollection_name(msg)
             markup = None
-            if text.lower() == "whoami":
+            if sub_name == "":  # /subcollection with no name: ask for it
+                reply = SUBCOLLECTION_PROMPT
+                markup = {
+                    "force_reply": True,
+                    "input_field_placeholder": "Subcollection name",
+                }
+            elif sub_name is not None:
+                reply = new_subcollection(sub_name, env)
+            elif text.lower() == "whoami":
                 try:
                     reply = f"Your local IP: {get_local_ip()}"
                 except Exception as e:
                     reply = f"Couldn't determine local IP: {e}"
-            # "/cmd@botname" is what Telegram sends when picked from the menu
-            elif cmd.split("@")[0].lower() == "/subcollection":
-                reply = new_subcollection(arg, env)
             else:
                 reply, markup = handle(text, env)
             extra = {"reply_markup": json.dumps(markup)} if markup else {}
